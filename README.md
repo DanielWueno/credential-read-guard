@@ -76,20 +76,24 @@ para cualquier acceso real a datos.
 **Opcion A — personal, en todos tus proyectos (recomendado si es solo para ti):**
 
 ```bash
-git clone <esta-url> "%USERPROFILE%\.claude\skills\credential-read-guard"
+git clone https://github.com/DanielWueno/credential-read-guard "%USERPROFILE%\.claude\skills\credential-read-guard"
 ```
 
 Clonar directo dentro de `~/.claude/skills/<nombre>/` hace que cargue
 automaticamente en cualquier proyecto la siguiente vez que abras Claude
 Code (`credential-read-guard@skills-dir`), sin instalar nada por proyecto.
 
-**Opcion B — por equipo, vía marketplace o repo:**
+**Opcion B — por proyecto especifico o via marketplace interno:**
 
 ```bash
-claude plugin install --plugin-dir <ruta-al-clon>
-# o, si lo agregas a un marketplace interno:
-claude plugin install credential-read-guard@<tu-marketplace>
+git clone https://github.com/DanielWueno/credential-read-guard
+claude plugin install credential-read-guard@<tu-marketplace>   # si lo agregas a un marketplace
 ```
+
+(La version de Claude Code usada al escribir esto no soporta instalar un
+plugin apuntando directo a una carpeta local -- `claude plugin install` solo
+resuelve contra marketplaces. Si tu version si lo soporta, revisa
+`claude plugin install --help`.)
 
 Después de instalar, **reinicia la sesión de Claude Code** (o abre `/hooks`
 una vez) — los hooks se cargan al arrancar, no en caliente.
