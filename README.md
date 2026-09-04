@@ -13,7 +13,9 @@ rechaza antes de ejecutarse, sin depender del comportamiento del modelo.
 ```mermaid
 flowchart LR
     A[Claude invoca Read / Grep / Bash] --> B{Hook PreToolUse<br/>guard.js}
-    B -->|coincide con un patron<br/>de credencial| C[deny — la herramienta<br/>nunca se ejecuta]
+    B -->|coincide con un patron<br/>de credencial| E{Archivo con<br/>estructura mixta?}
+    E -->|si -- config + secretos| F[deny + version redactada<br/>como contexto adicional]
+    E -->|no -- todo el archivo<br/>es el secreto| C[deny sin contenido]
     B -->|sin coincidencia| D[continua normalmente]
 ```
 
@@ -25,6 +27,19 @@ siguiente:
 | `Read` | `file_path` contra una lista de patrones de archivos de credenciales |
 | `Grep` | `path`/`glob` contra los mismos patrones, y `pattern` contra palabras clave asociadas a extracción de secretos (`password=`, `connectionstring`, `api_key`, etc.), independientemente del archivo objetivo |
 | `Bash` | el texto completo del comando, buscando combinaciones de comandos de lectura de contenido (`cat`, `type`, `Get-Content`, `head`, `tail`, `strings`, `base64`, etc.) contra un archivo de credenciales, o `grep`/`findstr`/`Select-String` junto con palabras clave de extracción de secretos |
+
+Un `deny` bloquea unicamente esa llamada puntual a la herramienta -- no
+interrumpe la sesion ni descarta el trabajo previo. Cuando el archivo
+detectado tiene estructura mixta (configuracion junto con secretos, como
+`appsettings*.json`, `.env`, `web.config`/`app.config`), el hook lee el
+archivo fuera del contexto del modelo, redacta unicamente los valores
+sensibles (por nombre de clave o por contener un patron de credencial
+embebido, como `Password=...` dentro de un connection string) y devuelve
+esa version redactada junto con el `deny`, de forma que el trabajo puede
+continuar sin que el secreto real llegue al modelo. Para archivos donde
+todo el contenido es en si mismo el secreto (llaves privadas,
+certificados, keystores, `kubeconfig`, `.tfstate`) no existe una version
+segura que preservar, y el `deny` no incluye contenido.
 
 ## Patrones cubiertos
 
@@ -55,6 +70,11 @@ de datos (DLP). Limitaciones conocidas:
 - **La lista de patrones es representativa, no exhaustiva.** Proyectos que
   almacenan secretos bajo nombres de archivo no convencionales no quedan
   cubiertos sin modificar `hooks/guard.js`.
+- **La redacción solo cubre formatos con estructura reconocida** —
+  `appsettings*.json`/`credentials.json`/`secrets.json` (JSON), `.env`,
+  `.npmrc`, `.netrc`, y `web.config`/`app.config`. Para `secrets.yaml`,
+  `kubeconfig`, `.tfvars` y `.tfstate` el `deny` no incluye contenido, ya
+  que su estructura no se analiza actualmente.
 
 Este plugin constituye un control adicional contra el caso común — Claude
 leyendo `appsettings.Development.json` porque lo consideró relevante, o
@@ -101,8 +121,10 @@ curso.
 Tras reiniciar, solicitar a Claude que lea un archivo
 `appsettings.Development.json`, o que ejecute `cat .env`, en un proyecto
 donde el plugin esté activo. La llamada debe ser rechazada con un mensaje
-con el prefijo `credential-read-guard: ...`, en vez de devolver el
-contenido del archivo.
+con el prefijo `credential-read-guard: ...`; para estos dos formatos,
+Claude debe recibir además una versión del archivo con los valores
+sensibles reemplazados por `«REDACTED-BY-credential-read-guard»`, en lugar
+del contenido original.
 
 Para probar el script del hook de forma directa, sin una sesión de Claude
 Code:
