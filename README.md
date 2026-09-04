@@ -8,16 +8,6 @@ mobile, infraestructura). El control se aplica a nivel de invocación de
 herramienta mediante un hook `PreToolUse`: la llamada se intercepta y se
 rechaza antes de ejecutarse, sin depender del comportamiento del modelo.
 
-## Relación con postgres-readonly-mcp
-
-Este plugin es intencionalmente independiente de
-[`postgres-readonly-mcp`](https://github.com/DanielWueno/postgres-readonly-mcp-plugin).
-Ese plugin garantiza que una conexión a base de datos no pueda usarse para
-escribir. Este garantiza que Claude no pueda leer el archivo o variable
-donde vive la credencial usada para establecer cualquier conexión, sea a
-una base de datos o a otro sistema. Son controles independientes; instalar
-uno no otorga las garantías del otro.
-
 ## Arquitectura
 
 ```mermaid
@@ -69,9 +59,9 @@ de datos (DLP). Limitaciones conocidas:
 Este plugin constituye un control adicional contra el caso común — Claude
 leyendo `appsettings.Development.json` porque lo consideró relevante, o
 ejecutando `cat .env` durante una depuración — y no un sustituto de evitar
-colocar secretos donde no corresponde, ni del uso de
-[roles de base de datos de mínimo privilegio](https://github.com/DanielWueno/postgres-readonly-mcp-plugin)
-para cualquier acceso real a datos.
+colocar secretos donde no corresponde, ni de aplicar el principio de mínimo
+privilegio en las credenciales y roles usados para cualquier acceso real a
+datos.
 
 ## Requisitos
 
