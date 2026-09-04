@@ -1,0 +1,6 @@
+{
+  "ApplicationName": "demo",
+  "FeatureFlags": {
+    "EnableBeta": false
+  }
+}

@@ -67,9 +67,11 @@ de datos (DLP). Limitaciones conocidas:
 - **Los servidores MCP de terceros quedan fuera de alcance.** El hook
   únicamente intercepta las herramientas nativas de Claude Code
   (`Read`/`Grep`/`Bash`).
-- **La lista de patrones es representativa, no exhaustiva.** Proyectos que
-  almacenan secretos bajo nombres de archivo no convencionales no quedan
-  cubiertos sin modificar `hooks/guard.js`.
+- **La lista de patrones integrada es representativa, no exhaustiva.**
+  Proyectos con convenciones propias de nombres de archivo o palabras clave
+  deben extenderla mediante `.credentialguardignore` (ver
+  [Personalización](#personalización)) en vez de modificar
+  `hooks/guard.js`.
 - **La redacción solo cubre formatos con estructura reconocida** —
   `appsettings*.json`/`credentials.json`/`secrets.json` (JSON), `.env`,
   `.npmrc`, `.netrc`, y `web.config`/`app.config`. Para `secrets.yaml`,
@@ -82,6 +84,27 @@ ejecutando `cat .env` durante una depuración — y no un sustituto de evitar
 colocar secretos donde no corresponde, ni de aplicar el principio de mínimo
 privilegio en las credenciales y roles usados para cualquier acceso real a
 datos.
+
+## Personalización
+
+Los patrones integrados en `hooks/guard.js` cubren convenciones comunes,
+pero cada proyecto puede tener las suyas propias. Un archivo
+`.credentialguardignore` en la raíz del proyecto — con el mismo modelo que
+un `.gitignore` — permite agregar o excluir patrones sin tocar el código
+del plugin:
+
+- Una línea = un patrón regex adicional (insensible a mayúsculas) que se
+  suma a los patrones de archivo integrados.
+- Prefijo `!` excluye un patrón — incluso uno integrado — en vez de
+  agregarlo.
+- Prefijo `keyword:` agrega una palabra clave de búsqueda de secretos
+  (para `Grep`/`grep` por shell) en vez de un patrón de archivo;
+  `!keyword:` la excluye.
+- Líneas vacías o que empiezan con `#` se ignoran.
+
+Ver [`examples/.credentialguardignore.example`](examples/.credentialguardignore.example)
+para un ejemplo completo. Si el archivo no existe, el plugin funciona
+igual, solo con los patrones integrados.
 
 ## Requisitos
 
@@ -118,23 +141,36 @@ curso.
 
 ## Verificación
 
-Tras reiniciar, solicitar a Claude que lea un archivo
-`appsettings.Development.json`, o que ejecute `cat .env`, en un proyecto
-donde el plugin esté activo. La llamada debe ser rechazada con un mensaje
-con el prefijo `credential-read-guard: ...`; para estos dos formatos,
-Claude debe recibir además una versión del archivo con los valores
-sensibles reemplazados por `«REDACTED-BY-credential-read-guard»`, en lugar
-del contenido original.
+No hay razón para confiar en esta descripción sin comprobarlo. El
+directorio [`examples/`](examples/) trae archivos con secretos ficticios
+(valor `estoNoSePinta`) pensados exactamente para esto: pedirle a Claude
+que los lea y observar si el bloqueo/redacción ocurre de verdad.
+
+Con la sesión reiniciada y el plugin activo en el proyecto, dentro de
+`examples/`:
+
+| Pedirle a Claude que lea | Resultado esperado |
+|---|---|
+| `appsettings.demo.json` | Rechazo, con una versión donde `ConnectionStrings.Default` y `ApiKey` aparecen como `«REDACTED-BY-credential-read-guard»` y `InfoNoSensible` se conserva intacto |
+| `demo.env` | Rechazo, con las tres variables reemplazadas por `«REDACTED-BY-credential-read-guard»` |
+| `demo.pfx` | Rechazo sin ningún contenido devuelto |
+| `normal-config.json` | Se lee con normalidad — confirma que el plugin no bloquea archivos no relacionados |
+
+Si en cualquiera de los tres primeros casos el valor `estoNoSePinta`
+aparece en la respuesta, el hook no está activo (revisar que la sesión se
+haya reiniciado después de instalar).
 
 Para probar el script del hook de forma directa, sin una sesión de Claude
 Code:
 
 ```bash
-echo '{"tool_name":"Read","tool_input":{"file_path":"appsettings.Development.json"}}' | node hooks/guard.js
+echo '{"tool_name":"Read","tool_input":{"file_path":"examples/appsettings.demo.json"}}' | node hooks/guard.js
 ```
 
 Un objeto JSON con `"permissionDecision":"deny"` indica que la llamada
-sería bloqueada. Sin salida (exit 0) indica que sería permitida.
+sería bloqueada; el campo `additionalContext`, cuando está presente,
+contiene la versión redactada. Sin salida (exit 0) indica que sería
+permitida.
 
 ## Licencia
 
