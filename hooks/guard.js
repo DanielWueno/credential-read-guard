@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// PreToolUse guard: deterministically blocks Claude from reading credential
-// material, regardless of which tool it tries to use (Read, Grep, or Bash
-// shelling out to cat/type/Get-Content/etc). Deliberately stack-agnostic —
-// not tied to any one framework, so it holds for .NET, Node, mobile, infra.
+// Hook PreToolUse: bloquea la lectura de material de credenciales sin
+// importar la herramienta usada (Read, Grep, o Bash invocando cat/type/
+// Get-Content/etc). Los patrones son agnosticos de framework: cubren
+// .NET, Node, mobile e infraestructura por igual.
 
 const SENSITIVE_FILE_RE = new RegExp(
   [
