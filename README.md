@@ -113,7 +113,19 @@ igual, solo con los patrones integrados.
 
 ## Instalación
 
-**Opción A — uso personal, en todos los proyectos:**
+**Opción A — vía marketplace (recomendada):**
+
+```
+/plugin marketplace add DanielWueno/dweno-forge
+/plugin install credential-read-guard@dweno-forge
+```
+
+[`dweno-forge`](https://github.com/DanielWueno/dweno-forge) es el catálogo de
+plugins del mismo autor. `/plugin marketplace add` se ejecuta una sola vez;
+`claude plugin update` recoge después cada nueva versión publicada en este
+repositorio.
+
+**Opción B — clonado manual, sin marketplace:**
 
 ```bash
 git clone https://github.com/DanielWueno/credential-read-guard "%USERPROFILE%\.claude\skills\credential-read-guard"
@@ -122,18 +134,8 @@ git clone https://github.com/DanielWueno/credential-read-guard "%USERPROFILE%\.c
 Clonar directamente dentro de `~/.claude/skills/<nombre>/` hace que el
 plugin cargue automáticamente en cualquier proyecto desde la siguiente
 sesión de Claude Code (`credential-read-guard@skills-dir`), sin
-configuración por proyecto.
-
-**Opción B — distribución de equipo vía marketplace:**
-
-```bash
-git clone https://github.com/DanielWueno/credential-read-guard
-claude plugin install credential-read-guard@<marketplace-interno>
-```
-
-| Nota de compatibilidad | Detalle |
-|---|---|
-| `claude plugin install --plugin-dir <ruta>` | No disponible en todas las versiones de Claude Code — en algunas versiones, `claude plugin install` solo resuelve plugins contra marketplaces configurados. Verificar las opciones disponibles con `claude plugin install --help` en la versión instalada. |
+configuración por proyecto. Útil si no quieres depender de un marketplace,
+o para trabajar sobre una copia local editable.
 
 Después de instalar, reiniciar la sesión de Claude Code (o abrir `/hooks`
 una vez) — los hooks se cargan al inicio, no se aplican a una sesión ya en
