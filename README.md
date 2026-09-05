@@ -143,27 +143,52 @@ curso.
 
 ## Verificación
 
-No hay razón para confiar en esta descripción sin comprobarlo. El
-directorio [`examples/`](examples/) trae archivos con secretos ficticios
-(valor `estoNoSePinta`) pensados exactamente para esto: pedirle a Claude
-que los lea y observar si el bloqueo/redacción ocurre de verdad.
+No hay razón para confiar en esta descripción sin comprobarlo. Con la
+sesión reiniciada y el plugin activo en el proyecto, el comando incluido
+lo hace por ti — no hace falta saber dónde quedó instalado el plugin ni ir
+a buscar el directorio `examples/` a mano:
 
-Con la sesión reiniciada y el plugin activo en el proyecto, dentro de
-`examples/`:
+```
+/credential-read-guard:doctor
+```
 
-| Pedirle a Claude que lea | Resultado esperado |
-|---|---|
-| `appsettings.demo.json` | Rechazo, con una versión donde `ConnectionStrings.Default` y `ApiKey` aparecen como `«REDACTED-BY-credential-read-guard»` y `InfoNoSensible` se conserva intacto |
-| `demo.env` | Rechazo, con las tres variables reemplazadas por `«REDACTED-BY-credential-read-guard»` |
-| `demo.pfx` | Rechazo sin ningún contenido devuelto |
-| `normal-config.json` | Se lee con normalidad — confirma que el plugin no bloquea archivos no relacionados |
+Corre el mismo `hooks/guard.js` contra los cuatro fixtures incluidos
+(secretos ficticios, valor `estoNoSePinta`) y confirma que cada uno se
+comporta como se documenta: los tres primeros con `deny` (los dos con
+estructura mixta, redactados; el `.pfx`, sin contenido) y el cuarto
+(`normal-config.json`) permitido sin cambios, para confirmar que el plugin
+no bloquea archivos no relacionados.
 
-Si en cualquiera de los tres primeros casos el valor `estoNoSePinta`
-aparece en la respuesta, el hook no está activo (revisar que la sesión se
-haya reiniciado después de instalar).
+El mismo comando acepta la ruta de un archivo propio del proyecto — útil
+para comprobar, por ejemplo, que un campo nuevo como `ApiKey` que acabas
+de agregar a tu `appsettings.json` real sí queda cubierto:
 
-Para probar el script del hook de forma directa, sin una sesión de Claude
-Code:
+```
+/credential-read-guard:doctor ruta/a/tu/appsettings.json
+```
+
+Esa verificación corre `hooks/guard.js` directo por Node, no un `Read` del
+archivo — tu contenido real nunca llega a mí, solo el veredicto
+(bloqueado/permitido) y, si aplica, la versión ya redactada.
+
+Si al correr `/credential-read-guard:doctor` sin argumentos algún fixture
+sale distinto de lo esperado, o el valor `estoNoSePinta` aparece sin
+redactar, el hook no está activo (revisar que la sesión se haya reiniciado
+después de instalar).
+
+### Sin pasar por Claude Code en absoluto
+
+Para quien quiera la garantía más fuerte — que ni siquiera una versión ya
+redactada pase por una sesión de Claude —, `scripts/doctor.js` es un
+script de Node corriente que se puede invocar en tu propia terminal, sin
+abrir Claude Code:
+
+```bash
+node scripts/doctor.js                       # los 4 fixtures de examples/
+node scripts/doctor.js ruta/a/tu/archivo.json # un archivo propio
+```
+
+O, para inspeccionar el JSON crudo que el hook le devolvería a Claude:
 
 ```bash
 echo '{"tool_name":"Read","tool_input":{"file_path":"examples/appsettings.demo.json"}}' | node hooks/guard.js

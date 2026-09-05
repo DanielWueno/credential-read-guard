@@ -3,6 +3,29 @@
 Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado: [SemVer](https://semver.org/lang/es/).
 
+## [1.1.0] — 2026-09-05
+
+### Añadido
+
+- Comando `/credential-read-guard:doctor`, respaldado por
+  `scripts/doctor.js`: corre `hooks/guard.js` contra los cuatro fixtures de
+  `examples/` y confirma que cada uno se comporta como documenta el
+  README, sin que el usuario necesite saber dónde quedó instalado el
+  plugin ni ir a buscar `examples/` a mano. Acepta también la ruta de un
+  archivo propio del proyecto para comprobar, por ejemplo, que un campo
+  nuevo quedó cubierto por la redacción — sin que ese contenido real
+  llegue al modelo, solo el veredicto.
+- `scripts/doctor.js` puede invocarse también fuera de una sesión de
+  Claude Code (`node scripts/doctor.js [ruta]`), para quien quiera la
+  garantía de que ni siquiera una versión ya redactada pasó por una
+  sesión de Claude.
+- Ejemplo de `keyword:` en `.credentialguardignore.example` para tratar
+  rangos de IP u hostnames internos como palabra clave de búsqueda de
+  secretos, documentado como opt-in por proyecto — no se agrega como
+  patrón integrado porque una IP u hostname aparece también en contextos
+  legítimos (localhost, ejemplos, URLs públicas), y un patrón global de
+  ese tipo generaría demasiados falsos positivos.
+
 ## [1.0.0] — 2026-09-04
 
 ### Añadido
