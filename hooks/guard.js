@@ -117,6 +117,16 @@ function isSecretHuntPattern(pattern) {
   return SECRET_HUNT_RE.test(pattern);
 }
 
+// IP (IPv4) con puerto opcional -- separador ":" (host:port generico) o ","
+// (formato de SQL Server, "Server=10.0.0.5,1433"). Revela topologia de
+// infraestructura aunque el valor que la contiene no matchee por nombre de
+// clave (p.ej. un endpoint en appsettings.json que no es "ConnectionStrings"
+// ni "ApiKey"). A diferencia de las palabras clave de Grep (ver
+// .credentialguardignore.example), aqui no hay riesgo de falso positivo
+// sobre texto libre: esta redaccion solo corre sobre archivos que
+// SENSITIVE_FILE_RE ya marco como credenciales.
+const IP_PORT_RE = /\b(?:\d{1,3}\.){3}\d{1,3}(?:[:,]\d{1,5})?\b/g;
+
 // Redacta valores de archivos con estructura mixta (config + secretos).
 // Devuelve null si el archivo no existe, no se puede leer, o su formato es
 // opaco (todo el contenido es el secreto -- ver OPAQUE_SECRET_RE).
@@ -130,7 +140,11 @@ function redactFile(filePath) {
     return null;
   }
 
-  const secretKeyRe = /password|pwd|secret|token|api[_-]?key|connectionstrings?/i;
+  // "connection[_-]?strings?" en vez de "connectionstrings?" para cubrir
+  // tambien la convencion SCREAMING_SNAKE_CASE de variables de entorno
+  // (CONNECTION_STRING), comun en manifiestos de Kubernetes/YAML, no solo
+  // el ConnectionStrings de .NET.
+  const secretKeyRe = /password|pwd|secret|token|api[_-]?key|connection[_-]?strings?/i;
   // Detecta credenciales embebidas DENTRO de un valor (p.ej. un connection
   // string como "User ID=x;Password=y;Host=z;"), independientemente del
   // nombre de la clave que lo contiene -- ese es el caso mas comun en
@@ -138,8 +152,10 @@ function redactFile(filePath) {
   // "password".
   const embeddedSecretRe = /\b(password|pwd)\s*=/i;
 
+  let redacted = null;
+
   if (/\.json$/i.test(filePath)) {
-    return content.replace(
+    redacted = content.replace(
       /("(?:[^"\\]|\\.)*")(\s*:\s*)("(?:[^"\\]|\\.)*")/g,
       (match, key, sep, value) => {
         if (secretKeyRe.test(key) || embeddedSecretRe.test(value)) {
@@ -148,10 +164,8 @@ function redactFile(filePath) {
         return match;
       }
     );
-  }
-
-  if (/\.(env|env\..+|npmrc|netrc)$/i.test(filePath)) {
-    return content
+  } else if (/\.(env|env\..+|npmrc|netrc)$/i.test(filePath)) {
+    redacted = content
       .split("\n")
       .map((line) => {
         const m = line.match(/^([^=:#\s][^=:]*)([=:])(.*)\r?$/);
@@ -162,16 +176,68 @@ function redactFile(filePath) {
           : line;
       })
       .join("\n");
-  }
-
-  if (/(web|app)\.config$/i.test(filePath)) {
-    return content.replace(
+  } else if (/(web|app)\.config$/i.test(filePath)) {
+    redacted = content.replace(
       /((?:connectionString|value)\s*=\s*")((?:[^"\\]|\\.)*)(")/gi,
       (match, pre, value, post) => `${pre}${REDACTED}${post}`
     );
+  } else if (/\.ya?ml$/i.test(filePath)) {
+    // Cubre tanto un mapeo plano ("CONNECTION_STRING: ...") como el patron
+    // de lista de variables de entorno de Kubernetes/Helm ("- name: X" /
+    // "  value: Y" en lineas separadas) -- ahi la clave real es "name", no
+    // "value", asi que se recuerda el ultimo "name:" visto para decidir si
+    // el "value:" que le sigue debe redactarse.
+    let pendingKey = null;
+    redacted = content
+      .split("\n")
+      .map((line) => {
+        const listName = line.match(/^(\s*-\s*name\s*:\s*)(.+?)\s*\r?$/i);
+        if (listName) {
+          pendingKey = listName[2].trim().replace(/^["']|["']$/g, "");
+          return line;
+        }
+        const kv = line.match(/^(\s*)([^:#\s][^:]*?)(\s*:\s*)(.*?)(\r?)$/);
+        if (!kv) return line;
+        const [, indent, rawKey, sep, rawValue, cr] = kv;
+        const trimmedKey = rawKey.trim();
+        const isValueLine = /^value$/i.test(trimmedKey);
+        const effectiveKey = isValueLine && pendingKey ? pendingKey : trimmedKey;
+        if (isValueLine) pendingKey = null;
+        if (!rawValue.trim() || !(secretKeyRe.test(effectiveKey) || embeddedSecretRe.test(rawValue))) {
+          return line;
+        }
+        const quoted = rawValue.match(/^(["'])([\s\S]*)\1$/);
+        const newValue = quoted ? `${quoted[1]}${REDACTED}${quoted[1]}` : REDACTED;
+        return `${indent}${rawKey}${sep}${newValue}${cr}`;
+      })
+      .join("\n");
   }
 
-  return null;
+  if (redacted == null) return null;
+
+  // Segunda pasada, sobre cualquier formato reconocido arriba: IPs/puertos
+  // se redactan donde aparezcan dentro del valor, incluso si la clave o el
+  // atributo que los contiene no disparo la redaccion por si solo.
+  return redacted.replace(IP_PORT_RE, REDACTED);
+}
+
+// YAML no tiene una convencion de nombre fija (manifiestos de Kubernetes,
+// docker-compose, values de Helm -- el proyecto los llama como quiera), asi
+// que SENSITIVE_FILE_RE no lo cubre salvo el caso literal "secrets.yaml".
+// Para cualquier otro *.yaml/*.yml, en vez de negar por nombre, se intenta
+// la redaccion igual y se compara contra el original: si redactFile()
+// encontro y reemplazo algo (una CONNECTION_STRING embebida, por ejemplo),
+// es que el archivo si tenia credenciales -- sin eso, se permite normal.
+function yamlEmbeddedSecretRedaction(filePath) {
+  if (!filePath || !/\.ya?ml$/i.test(filePath)) return null;
+  let original;
+  try {
+    original = fs.readFileSync(filePath, "utf8");
+  } catch {
+    return null;
+  }
+  const redacted = redactFile(filePath);
+  return redacted != null && redacted !== original ? redacted : null;
 }
 
 function readStdin() {
@@ -220,6 +286,10 @@ function allow() {
       const redacted = redactFile(filePath);
       return deny(`archivo de credenciales (${filePath})`, redacted);
     }
+    const yamlRedacted = yamlEmbeddedSecretRedaction(filePath);
+    if (yamlRedacted != null) {
+      return deny(`archivo YAML con credenciales embebidas (${filePath})`, yamlRedacted);
+    }
   }
 
   if (toolName === "Grep") {
@@ -234,12 +304,18 @@ function allow() {
 
   if (toolName === "Bash" || toolName === "PowerShell") {
     const cmd = ti.command || "";
-    if (READ_COMMAND_RE.test(cmd) && isSensitiveFile(cmd)) {
+    if (READ_COMMAND_RE.test(cmd)) {
       // Redaccion solo cuando el comando apunta a un unico archivo identificable
       // sin pipes/redirecciones -- en cualquier otro caso, deny sin contenido.
       const single = cmd.match(/^\s*\S+\s+"?([^"|>&;]+?)"?\s*$/);
-      const redacted = single ? redactFile(single[1].trim()) : null;
-      return deny(`comando lee un archivo de credenciales: ${cmd}`, redacted);
+      const target = single ? single[1].trim() : null;
+      if (isSensitiveFile(cmd)) {
+        return deny(`comando lee un archivo de credenciales: ${cmd}`, target ? redactFile(target) : null);
+      }
+      const yamlRedacted = yamlEmbeddedSecretRedaction(target);
+      if (yamlRedacted != null) {
+        return deny(`comando lee un YAML con credenciales embebidas: ${cmd}`, yamlRedacted);
+      }
     }
     if (SHELL_GREP_RE.test(cmd) && isSecretHuntPattern(cmd)) {
       return deny(`comando busca secretos via shell: ${cmd}`);

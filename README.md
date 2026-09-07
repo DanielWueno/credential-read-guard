@@ -24,19 +24,42 @@ siguiente:
 
 | Herramienta | Evaluación |
 |---|---|
-| `Read` | `file_path` contra una lista de patrones de archivos de credenciales |
+| `Read` | `file_path` contra una lista de patrones de archivos de credenciales; para `*.yaml`/`*.yml` sin ese nombre, además, el contenido en busca de claves/valores de credencial (ver más abajo) |
 | `Grep` | `path`/`glob` contra los mismos patrones, y `pattern` contra palabras clave asociadas a extracción de secretos (`password=`, `connectionstring`, `api_key`, etc.), independientemente del archivo objetivo |
-| `Bash` / `PowerShell` | el texto completo del comando, buscando combinaciones de comandos de lectura de contenido (`cat`, `type`, `Get-Content`, `head`, `tail`, `strings`, `base64`, etc.) contra un archivo de credenciales, o `grep`/`findstr`/`Select-String` junto con palabras clave de extracción de secretos |
+| `Bash` / `PowerShell` | el texto completo del comando, buscando combinaciones de comandos de lectura de contenido (`cat`, `type`, `Get-Content`, `head`, `tail`, `strings`, `base64`, etc.) contra un archivo de credenciales o, si el comando apunta a un único `*.yaml`/`*.yml`, contra su contenido; o `grep`/`findstr`/`Select-String` junto con palabras clave de extracción de secretos |
 
 Un `deny` bloquea unicamente esa llamada puntual a la herramienta -- no
 interrumpe la sesion ni descarta el trabajo previo. Cuando el archivo
 detectado tiene estructura mixta (configuracion junto con secretos, como
-`appsettings*.json`, `.env`, `web.config`/`app.config`), el hook lee el
-archivo fuera del contexto del modelo, redacta unicamente los valores
-sensibles (por nombre de clave o por contener un patron de credencial
-embebido, como `Password=...` dentro de un connection string) y devuelve
-esa version redactada junto con el `deny`, de forma que el trabajo puede
-continuar sin que el secreto real llegue al modelo. Para archivos donde
+`appsettings*.json`, `.env`, `web.config`/`app.config`, `*.yaml`/`*.yml`),
+el hook lee el archivo fuera del contexto del modelo, redacta unicamente
+los valores sensibles (por nombre de clave o por contener un patron de
+credencial embebido, como `Password=...` dentro de un connection string) y
+devuelve esa version redactada junto con el `deny`, de forma que el trabajo
+puede continuar sin que el secreto real llegue al modelo.
+
+`*.yaml`/`*.yml` es un caso especial: no hay una convencion de nombre fija
+para estos archivos (manifiestos de Kubernetes, `docker-compose`, values de
+Helm -- cada proyecto los llama como quiera), asi que en vez de exigir un
+nombre como `secrets.yaml`, el hook intenta la redaccion sobre cualquier
+`*.yaml`/`*.yml` que se intente leer y compara el resultado contra el
+original: si encontro y reemplazo algo (por ejemplo, una variable de
+entorno `CONNECTION_STRING` en el patron de lista `- name: ... / value:
+...` tipico de un `env:` de Kubernetes), el archivo si tenia credenciales y
+se bloquea con la version redactada; si no encontro nada, se permite sin
+tocarlo. Esto es distinto de todos los demas patrones de este plugin, que
+son unicamente por nombre de archivo.
+
+Ademas, dentro de esos
+mismos archivos, cualquier IP (IPv4) con puerto opcional (`IP:puerto` o,
+formato SQL Server, `IP,puerto`) se redacta sin importar la clave o el
+atributo que la contenga -- revela topologia de infraestructura aunque no
+matchee por nombre (`ApiEndpoint`, por ejemplo, no dispara la redaccion por
+si solo, pero la IP dentro de su valor si). Esto es distinto de tratar IPs
+como palabra clave de busqueda para `Grep` (ver
+[Personalización](#personalización)): ahi una IP en texto libre generaria
+demasiados falsos positivos, pero aqui solo se redacta dentro de un archivo
+que `SENSITIVE_FILE_RE` ya marco como credenciales. Para archivos donde
 todo el contenido es en si mismo el secreto (llaves privadas,
 certificados, keystores, `kubeconfig`, `.tfstate`) no existe una version
 segura que preservar, y el `deny` no incluye contenido.
@@ -47,7 +70,10 @@ segura que preservar, y el `deny` no incluye contenido.
 `*.pem`, `*.key`, `*.jks`, `*.keystore` (firma de aplicaciones
 MAUI/Android), `credentials.json`, `id_rsa`/`id_ed25519` (y variantes
 `.pub`), `*.ppk`, `.npmrc`, `.netrc`, `secrets.json`/`secrets.yaml`,
-`*.kdbx`, `kubeconfig`, `.aws/credentials`, `*.tfvars`, `*.tfstate`.
+`*.kdbx`, `kubeconfig`, `.aws/credentials`, `*.tfvars`, `*.tfstate`. Además,
+por contenido (no por nombre): cualquier `*.yaml`/`*.yml`, sin importar
+cómo se llame, si contiene una clave o valor de credencial reconocible
+(`CONNECTION_STRING`, `Password=...`, etc. — ver [Arquitectura](#arquitectura)).
 
 ## Alcance y limitaciones
 
@@ -74,9 +100,15 @@ de datos (DLP). Limitaciones conocidas:
   `hooks/guard.js`.
 - **La redacción solo cubre formatos con estructura reconocida** —
   `appsettings*.json`/`credentials.json`/`secrets.json` (JSON), `.env`,
-  `.npmrc`, `.netrc`, y `web.config`/`app.config`. Para `secrets.yaml`,
+  `.npmrc`, `.netrc`, `web.config`/`app.config`, y `*.yaml`/`*.yml`. Para
   `kubeconfig`, `.tfvars` y `.tfstate` el `deny` no incluye contenido, ya
-  que su estructura no se analiza actualmente.
+  que su estructura no se analiza actualmente (o, en el caso de
+  `kubeconfig`, porque se trata como opaco a propósito).
+- **La detección en YAML es por línea, no un parser YAML real.** Reconoce
+  un mapeo plano (`CLAVE: valor`) y el patrón de lista de Kubernetes/Helm
+  (`- name: X` seguido de `value: Y`), pero no escalares de bloque
+  multilínea (`|`, `>`) ni un `Secret` de Kubernetes con valores en
+  `base64` bajo una clave sin nombre reconocible.
 
 Este plugin constituye un control adicional contra el caso común — Claude
 leyendo `appsettings.Development.json` porque lo consideró relevante, o
@@ -152,14 +184,20 @@ a buscar el directorio `examples/` a mano:
 /credential-read-guard:doctor
 ```
 
-Corre el mismo `hooks/guard.js` contra los cinco fixtures incluidos
+Corre el mismo `hooks/guard.js` contra los seis fixtures incluidos
 (secretos ficticios, valor `estoNoSePinta`) y confirma que cada uno se
-comporta como se documenta: los cuatro primeros con `deny` (tres con
+comporta como se documenta: los primeros cuatro con `deny` (tres con
 estructura mixta, redactados — incluido `demo-crlf.env`, con finales de
 línea CRLF, para cubrir el caso común en checkouts de Windows con
-`core.autocrlf=true`; el `.pfx`, sin contenido) y el quinto
-(`normal-config.json`) permitido sin cambios, para confirmar que el plugin
-no bloquea archivos no relacionados.
+`core.autocrlf=true`; el `.pfx`, sin contenido); `normal-config.json`
+permitido sin cambios, para confirmar que el plugin no bloquea archivos no
+relacionados; y `k8s-deployment.demo.yaml`, con `deny` pese a que su
+nombre no sigue ninguna convención reconocida, para confirmar la detección
+de YAML por contenido (una `CONNECTION_STRING` embebida en el patrón de
+lista `env:` de Kubernetes). `appsettings.demo.json` incluye además un
+`ApiEndpoint` con una IP y puerto ficticios, para confirmar que también
+quedan redactados dentro de un valor que por nombre de clave no dispara la
+redacción por sí solo.
 
 El mismo comando acepta la ruta de un archivo propio del proyecto — útil
 para comprobar, por ejemplo, que un campo nuevo como `ApiKey` que acabas

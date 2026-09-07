@@ -1,0 +1,14 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auditorias
+spec:
+  template:
+    spec:
+      containers:
+        - name: api
+          env:
+            - name: ASPNETCORE_BASEPATH
+              value: /reyma/auditorias
+            - name: CONNECTION_STRING
+              value: "User ID=appuser;Password=estoNoSePinta;Host=10.20.30.50;Port=5432;Database=auditorias;Pooling=true;ApplicationName=Auditoria.Microservice.Api"
