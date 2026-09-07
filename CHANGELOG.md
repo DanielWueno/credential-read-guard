@@ -3,6 +3,46 @@
 Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado: [SemVer](https://semver.org/lang/es/).
 
+## [1.2.1] — 2026-09-07
+
+### Añadido
+
+- La redacción de archivos con estructura mixta (`appsettings*.json`,
+  `.env`, `web.config`/`app.config`) ahora también cubre IPs (IPv4) con
+  puerto opcional (`IP:puerto`, o `IP,puerto` — formato de connection
+  string de SQL Server), sin importar la clave o el atributo que las
+  contenga. Antes, un valor como `"ApiEndpoint": "http://10.0.0.5:8443/api"`
+  pasaba intacto en el `additionalContext` porque ni la clave ni el valor
+  matcheaban `password`/`secret`/`token`/etc. Encontrado al revisar a mano
+  la salida de un `deny` real contra un `appsettings.json` con una cadena
+  de conexión — esa sí quedó redactada por contener `Password=`, pero una
+  IP en otro campo del mismo archivo no. Cubierto ahora por el campo
+  `ApiEndpoint` agregado a `examples/appsettings.demo.json`. A diferencia
+  de tratar IPs como palabra clave de búsqueda para `Grep` (documentado
+  como opt-in en `.credentialguardignore.example` desde 1.1.0 por el
+  riesgo de falsos positivos en texto libre), esta redacción solo corre
+  dentro de un archivo que los patrones integrados ya marcaron como
+  credenciales, así que no aplica esa misma limitación.
+- **Detección de `*.yaml`/`*.yml` por contenido, no solo por nombre.**
+  Reportado con un manifiesto de Kubernetes real (`containers: - env: -
+  name: CONNECTION_STRING / value: "User ID=...;Password=...;Host=...;"`)
+  que pasaba de largo por `/credential-read-guard:doctor` — el proyecto no
+  tiene una convención de nombre para estos archivos, así que
+  `SENSITIVE_FILE_RE` (que solo reconocía el nombre literal
+  `secrets.yaml`) nunca se activaba. Ahora, para cualquier `*.yaml`/`*.yml`
+  que no matchee ya por nombre, el hook intenta igual la redacción y
+  compara el resultado contra el original: si encontró y reemplazó algo
+  (por nombre de clave, incluida ahora la convención `CONNECTION_STRING`
+  con guion bajo — antes solo se reconocía `ConnectionStrings` de .NET —, o
+  por un patrón de credencial embebido como `Password=...`), bloquea la
+  llamada con la versión redactada; si no encontró nada, permite el
+  archivo sin tocarlo. Cubre tanto un mapeo plano (`CLAVE: valor`) como el
+  patrón de lista de variables de entorno de Kubernetes/Helm (`- name: X`
+  seguido de `value: Y` en la línea siguiente). Aplica a `Read` y a
+  `Bash`/`PowerShell` cuando el comando apunta a un único archivo. Fixture
+  nuevo: `examples/k8s-deployment.demo.yaml`, con un nombre deliberadamente
+  genérico para probar la detección por contenido.
+
 ## [1.2.0] — 2026-09-07
 
 ### Añadido
