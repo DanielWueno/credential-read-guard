@@ -1,0 +1,13 @@
+# Los scripts de shell tienen que quedar en LF siempre -- un checkout en
+# Windows con core.autocrlf=true (el default mas comun) los convertiria a
+# CRLF, y un script que arranca con un shebang seguido de \r falla al
+# ejecutarse. Sin esta linea, instalar-atajo.sh se rompe exactamente por
+# la misma clase de bug que corrige en la redaccion de .env.
+*.sh text eol=lf
+
+# examples/demo-crlf.env existe para probar la redaccion de .env con
+# finales de linea CRLF (bug real en Windows con core.autocrlf=true, donde
+# el checkout normal ya convierte LF a CRLF). Se marca -text para que git
+# nunca le toque los finales de linea, sin importar la config de quien
+# clone: el punto del fixture es que sus bytes sean CRLF siempre.
+examples/demo-crlf.env -text
