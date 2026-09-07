@@ -17,8 +17,13 @@ const BUILTIN_CASES = [
     file: "examples/appsettings.demo.json",
     expect: "deny",
     mustRedact: true,
-    mustNotContain: ["estoNoSePinta"],
-    mustContain: ["InfoNoSensible", "este valor debe seguir visible sin cambios"],
+    mustNotContain: ["estoNoSePinta", "10.20.30.40", "10.20.30.41", "8443"],
+    mustContain: [
+      "InfoNoSensible",
+      "este valor debe seguir visible sin cambios",
+      "http://",
+      "/api",
+    ],
   },
   {
     file: "examples/demo.env",
@@ -41,6 +46,13 @@ const BUILTIN_CASES = [
     file: "examples/normal-config.json",
     expect: "allow",
     mustRedact: false,
+  },
+  {
+    file: "examples/k8s-deployment.demo.yaml",
+    expect: "deny",
+    mustRedact: true,
+    mustNotContain: ["estoNoSePinta", "10.20.30.50", "User ID=appuser"],
+    mustContain: ["ASPNETCORE_BASEPATH", "/reyma/auditorias", "apiVersion: apps/v1"],
   },
 ];
 
@@ -145,7 +157,7 @@ if (!arg) {
     console.error(`✗ ${failures} fixture(s) no se comportaron como se esperaba.`);
     process.exit(1);
   }
-  console.log("✓ Los 5 fixtures de examples/ se comportan como documenta el README.");
+  console.log(`✓ Los ${BUILTIN_CASES.length} fixtures de examples/ se comportan como documenta el README.`);
   console.log("\nPara probar un archivo propio: node scripts/doctor.js <ruta>");
   process.exit(0);
 } else {
