@@ -3,6 +3,43 @@
 Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado: [SemVer](https://semver.org/lang/es/).
 
+## [1.2.0] — 2026-09-07
+
+### Añadido
+
+- Comando `/credential-read-guard:atajo`, respaldado por
+  `scripts/instalar-atajo.sh`: instala `credguard`, un lanzador de tres
+  líneas en `~/.local/bin` (donde ya vive el propio `claude`) que resuelve
+  la instalación del plugin en cada ejecución y llama a
+  `scripts/doctor.js`. Antes, invocar el doctor fuera de una sesión de
+  Claude Code exigía encontrar a mano la ruta con el número de versión
+  adentro (`.../cache/dweno-forge/credential-read-guard/<version>/...`),
+  que cambia en cada `claude plugin update`. Con el atajo instalado,
+  `credguard` (fixtures incluidos) o `credguard <ruta>` (archivo propio)
+  funcionan desde cualquier proyecto sin volver a tocarse tras una
+  actualización. Incluye envoltorio `.cmd` para PowerShell/cmd y registro
+  automático de `~/.local/bin` en el PATH de usuario en Windows.
+
+### Corregido
+
+- **El hook no interceptaba la herramienta `PowerShell`.** El `matcher` de
+  `hooks/hooks.json` solo cubría `Read|Grep|Bash`; en Windows, un
+  `Get-Content` (u otro comando documentado como cubierto) corrido a
+  través de la herramienta `PowerShell` en vez de `Bash` pasaba sin
+  control alguno, pese a que el README ya documentaba `Get-Content` y
+  `Select-String` como cubiertos. Encontrado al probar el atajo `credguard`
+  contra la instalación real de este plugin en una sesión con ambas
+  herramientas disponibles. Ahora `hooks/guard.js` trata `PowerShell`
+  igual que `Bash`.
+- **La redacción de `.env`/`.npmrc`/`.netrc` fallaba en silencio con
+  finales de línea CRLF** — el caso común en checkouts de Windows con
+  `core.autocrlf=true` (incluida la propia instalación de este plugin vía
+  marketplace). El regex por línea no toleraba el `\r` final, la línea
+  completa se devolvía sin redactar, y el valor sensible quedaba visible
+  en el `additionalContext` que ve el modelo — exactamente lo que la
+  redacción existe para evitar. Cubierto ahora por el fixture
+  `examples/demo-crlf.env` en la batería del `doctor`.
+
 ## [1.1.0] — 2026-09-05
 
 ### Añadido
