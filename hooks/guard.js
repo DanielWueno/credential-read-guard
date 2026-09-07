@@ -154,7 +154,7 @@ function redactFile(filePath) {
     return content
       .split("\n")
       .map((line) => {
-        const m = line.match(/^([^=:#\s][^=:]*)([=:])(.*)$/);
+        const m = line.match(/^([^=:#\s][^=:]*)([=:])(.*)\r?$/);
         if (!m) return line;
         const [, key, sep] = m;
         return secretKeyRe.test(key) || /\.env(\..+)?$/i.test(filePath)
@@ -232,7 +232,7 @@ function allow() {
     }
   }
 
-  if (toolName === "Bash") {
+  if (toolName === "Bash" || toolName === "PowerShell") {
     const cmd = ti.command || "";
     if (READ_COMMAND_RE.test(cmd) && isSensitiveFile(cmd)) {
       // Redaccion solo cuando el comando apunta a un unico archivo identificable

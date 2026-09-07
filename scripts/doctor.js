@@ -27,6 +27,12 @@ const BUILTIN_CASES = [
     mustNotContain: ["estoNoSePinta"],
   },
   {
+    file: "examples/demo-crlf.env",
+    expect: "deny",
+    mustRedact: true,
+    mustNotContain: ["estoNoSePinta"],
+  },
+  {
     file: "examples/demo.pfx",
     expect: "deny",
     mustRedact: false,
@@ -139,7 +145,7 @@ if (!arg) {
     console.error(`✗ ${failures} fixture(s) no se comportaron como se esperaba.`);
     process.exit(1);
   }
-  console.log("✓ Los 4 fixtures de examples/ se comportan como documenta el README.");
+  console.log("✓ Los 5 fixtures de examples/ se comportan como documenta el README.");
   console.log("\nPara probar un archivo propio: node scripts/doctor.js <ruta>");
   process.exit(0);
 } else {

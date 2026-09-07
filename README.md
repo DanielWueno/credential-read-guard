@@ -26,7 +26,7 @@ siguiente:
 |---|---|
 | `Read` | `file_path` contra una lista de patrones de archivos de credenciales |
 | `Grep` | `path`/`glob` contra los mismos patrones, y `pattern` contra palabras clave asociadas a extracción de secretos (`password=`, `connectionstring`, `api_key`, etc.), independientemente del archivo objetivo |
-| `Bash` | el texto completo del comando, buscando combinaciones de comandos de lectura de contenido (`cat`, `type`, `Get-Content`, `head`, `tail`, `strings`, `base64`, etc.) contra un archivo de credenciales, o `grep`/`findstr`/`Select-String` junto con palabras clave de extracción de secretos |
+| `Bash` / `PowerShell` | el texto completo del comando, buscando combinaciones de comandos de lectura de contenido (`cat`, `type`, `Get-Content`, `head`, `tail`, `strings`, `base64`, etc.) contra un archivo de credenciales, o `grep`/`findstr`/`Select-String` junto con palabras clave de extracción de secretos |
 
 Un `deny` bloquea unicamente esa llamada puntual a la herramienta -- no
 interrumpe la sesion ni descarta el trabajo previo. Cuando el archivo
@@ -66,7 +66,7 @@ de datos (DLP). Limitaciones conocidas:
   texto invocados vía `Bash`).
 - **Los servidores MCP de terceros quedan fuera de alcance.** El hook
   únicamente intercepta las herramientas nativas de Claude Code
-  (`Read`/`Grep`/`Bash`).
+  (`Read`/`Grep`/`Bash`/`PowerShell`).
 - **La lista de patrones integrada es representativa, no exhaustiva.**
   Proyectos con convenciones propias de nombres de archivo o palabras clave
   deben extenderla mediante `.credentialguardignore` (ver
@@ -152,10 +152,12 @@ a buscar el directorio `examples/` a mano:
 /credential-read-guard:doctor
 ```
 
-Corre el mismo `hooks/guard.js` contra los cuatro fixtures incluidos
+Corre el mismo `hooks/guard.js` contra los cinco fixtures incluidos
 (secretos ficticios, valor `estoNoSePinta`) y confirma que cada uno se
-comporta como se documenta: los tres primeros con `deny` (los dos con
-estructura mixta, redactados; el `.pfx`, sin contenido) y el cuarto
+comporta como se documenta: los cuatro primeros con `deny` (tres con
+estructura mixta, redactados — incluido `demo-crlf.env`, con finales de
+línea CRLF, para cubrir el caso común en checkouts de Windows con
+`core.autocrlf=true`; el `.pfx`, sin contenido) y el quinto
 (`normal-config.json`) permitido sin cambios, para confirmar que el plugin
 no bloquea archivos no relacionados.
 
@@ -198,6 +200,34 @@ Un objeto JSON con `"permissionDecision":"deny"` indica que la llamada
 sería bloqueada; el campo `additionalContext`, cuando está presente,
 contiene la versión redactada. Sin salida (exit 0) indica que sería
 permitida.
+
+### Atajo `credguard`
+
+`node scripts/doctor.js` funciona, pero exige encontrar a mano la ruta
+donde quedó instalado el plugin — un path con el número de versión
+adentro (`.../cache/dweno-forge/credential-read-guard/1.2.0/...`), que
+cambia en cada `claude plugin update`. El comando
+
+```
+/credential-read-guard:atajo
+```
+
+instala `credguard`, un lanzador de tres líneas en `~/.local/bin` (donde
+ya vive el propio `claude`) que resuelve la instalación del plugin en
+cada ejecución, así que sigue funcionando después de cualquier
+actualización sin que nadie lo vuelva a tocar. Desde cualquier proyecto,
+en cualquier terminal:
+
+```bash
+credguard                 # los 4 fixtures de examples/
+credguard ruta/archivo    # un archivo propio, sin exponer su contenido
+```
+
+También puede instalarse sin pasar por Claude Code:
+`bash scripts/instalar-atajo.sh`, parado en este repositorio. Es
+idempotente y nunca sobrescribe un `credguard` que no haya puesto este
+mismo plugin. Incluye envoltorio `.cmd` para quien trabaje en PowerShell
+o cmd.
 
 ## Licencia
 
