@@ -129,7 +129,9 @@
           "verificacion": "Un clon fresco del repositorio (git clone de este mismo repo a un directorio temporal) ejecuta node scripts/doctor.js y sale 0, sin copiar nada del checkout de trabajo ni variables de entorno adicionales.",
           "verificacion_comando": "bash -c 'set -e; d=$(mktemp -d); git clone --quiet \"$(git rev-parse --show-toplevel)\" \"$d\"; cd \"$d\"; node scripts/doctor.js'",
           "horas_maquina": 0.5,
-          "estado": "pendiente",
+          "estado": "hecho",
+          "fecha_inicio": "2026-09-09",
+          "resultado": "Verificación ejecutada en clon fresco (git clone a directorio temporal, sin checkout ni variables de entorno del proyecto). El comando 'node scripts/doctor.js' exitó con código 0. Todos los 25 casos de prueba pasaron exitosamente (10 fixtures + 15 tool-surface cases). El sistema es reproducible desde un clon limpio con solo Node.js instalado.",
           "por_que_este_modelo": "Es correr un comando y leer el código de salida -- no hay criterio que diseñar.",
           "archivos": "Ninguno esperado -- es una comprobación. Si falla, el hallazgo se convierte en su propio ítem (típicamente un requisito no documentado en Instalación).",
           "rollback": "No aplica -- es una comprobación, no cambia comportamiento del plugin."
