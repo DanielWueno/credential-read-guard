@@ -103,6 +103,35 @@ const BUILTIN_CASES = [
     mustNotContain: ["estoNoSePinta", "10.20.30.50", "User ID=appuser"],
     mustContain: ["ASPNETCORE_BASEPATH", "/reyma/auditorias", "apiVersion: apps/v1"],
   },
+  // Dos huecos de la rama YAML de redactFile() que no dependen del nombre de
+  // clave: (1) TODO valor bajo data:/stringData: de un kind: Secret es
+  // secreto por especificacion de Kubernetes, sin importar como se llame la
+  // clave ("app-config.json", "custom_flag" no matchean ninguna heuristica
+  // de nombre); (2) un escalar multilinea ("tls.key: |") bajo una clave que
+  // se redacta tiene su valor real en las lineas siguientes, no en la linea
+  // "clave: |". El segundo documento (kind: ConfigMap, separado por "---")
+  // prueba que el estado de Secret no se arrastra entre documentos: la misma
+  // clave "data:" ahi no activa la regla 1, y su contenido no sensible sigue
+  // visible.
+  {
+    file: "examples/k8s-secret.demo.yaml",
+    expect: "deny",
+    mustRedact: true,
+    mustNotContain: [
+      "ZmFrZS1iYXNlNjQtdmFsdWUtbm8tcmVhbC1zZWNyZXQ=",
+      "ZmFrZS1mbGFnLXZhbHVlLW5vLXJlYWw=",
+      "config de ejemplo no sensible en texto plano",
+      "valor-de-ejemplo-no-sensible-en-texto-plano",
+      "-----BEGIN PRIVATE KEY-----",
+      "ZmFrZUtleUxpbmVPbmVOb1JlYWxTZWNyZXRNYXRlcmlhbA==",
+      "ZmFrZUtleUxpbmVUd29BbHNvTm90UmVhbA==",
+      "-----END PRIVATE KEY-----",
+    ],
+    mustContain: [
+      "este texto no es sensible y debe seguir visible",
+      "kind: ConfigMap",
+    ],
+  },
 ];
 
 function runGuardWithInput(toolName, toolInput) {

@@ -335,10 +335,99 @@ function redactFile(filePath) {
     // "  value: Y" en lineas separadas) -- ahi la clave real es "name", no
     // "value", asi que se recuerda el ultimo "name:" visto para decidir si
     // el "value:" que le sigue debe redactarse.
+    //
+    // Dos huecos adicionales que esta rama cubre, con estado extra:
+    //
+    //   Regla 1 -- bloques data:/stringData: de un Secret. Por especificacion
+    //   de Kubernetes, TODO valor bajo "data:"/"stringData:" de un recurso
+    //   "kind: Secret" es secreto sin importar el nombre de la clave (una
+    //   clave arbitraria como "app-config.json:" pasaria completa si el gate
+    //   siguiera siendo isSecretKey()/shouldRedact()). currentKind guarda el
+    //   "kind:" a nivel de documento (sin indentar) visto mas reciente;
+    //   inSecretDataBlock/secretDataBlockIndent marcan que estamos dentro de
+    //   ese bloque y con que indentacion abrio, para saber cuando cierra.
+    //
+    //   Regla 2 -- escalares multilinea ("|"/">") bajo una clave que se
+    //   redacta. El valor real no vive en la linea "clave: |" sino en las
+    //   lineas siguientes, mas indentadas -- que no matchean el patron
+    //   "clave: valor" y pasarian completas. inMultilineScalar/
+    //   multilineScalarKeyIndent/multilineScalarEmitted colapsan todo el
+    //   cuerpo a un UNICO marcador redactado (no uno por linea); por eso el
+    //   .map(...) de mas abajo puede devolver null (linea a descartar) y se
+    //   filtra antes del join.
+    //
+    // Todo el estado de documento (pendingKey incluido -- antes no se
+    // reseteaba entre documentos, bug preexistente de bajo riesgo que se
+    // arregla de paso) se reinicia en cada separador "---".
     let pendingKey = null;
+    let currentKind = null;
+    let inSecretDataBlock = false;
+    let secretDataBlockIndent = 0;
+    let inMultilineScalar = false;
+    let multilineScalarKeyIndent = 0;
+    let multilineScalarEmitted = false;
+    const MULTILINE_SCALAR_RE = /^[|>][+-]?\d*\s*$/;
+    const indentOf = (l) => (l.match(/^(\s*)/) || ["", ""])[1].length;
+
     redacted = content
       .split("\n")
       .map((line) => {
+        if (/^---\s*$/.test(line)) {
+          pendingKey = null;
+          currentKind = null;
+          inSecretDataBlock = false;
+          secretDataBlockIndent = 0;
+          inMultilineScalar = false;
+          multilineScalarKeyIndent = 0;
+          multilineScalarEmitted = false;
+          return line;
+        }
+
+        // Cuerpo de un escalar multilinea ya decidido a redactar: colapsar a
+        // un unico marcador (en la indentacion de la primera linea del
+        // cuerpo) y descartar el resto de lineas del bloque.
+        if (inMultilineScalar) {
+          const blank = /^\s*$/.test(line);
+          if (blank || indentOf(line) > multilineScalarKeyIndent) {
+            if (multilineScalarEmitted) return null;
+            multilineScalarEmitted = true;
+            const bodyIndent = blank
+              ? " ".repeat(multilineScalarKeyIndent + 2)
+              : line.match(/^(\s*)/)[1];
+            return `${bodyIndent}${REDACTED}`;
+          }
+          inMultilineScalar = false;
+          // No return: esta linea cierra el bloque y sigue la logica normal.
+        }
+
+        const kindLine = line.match(/^kind\s*:\s*(.+?)\s*\r?$/i);
+        if (kindLine) {
+          currentKind = kindLine[1].trim().replace(/^["']|["']$/g, "");
+        }
+
+        const dataBlockOpen = line.match(/^(\s*)(data|stringData)\s*:\s*\r?$/i);
+        if (dataBlockOpen) {
+          if (/^secret$/i.test(currentKind || "")) {
+            inSecretDataBlock = true;
+            secretDataBlockIndent = dataBlockOpen[1].length;
+          } else {
+            inSecretDataBlock = false;
+          }
+          return line;
+        }
+
+        let forcedBySecretData = false;
+        if (inSecretDataBlock) {
+          if (/^\s*$/.test(line)) return line;
+          if (indentOf(line) <= secretDataBlockIndent) {
+            inSecretDataBlock = false;
+            // No return: esta linea cierra el bloque y sigue la logica
+            // normal -- puede ser otra clave del documento.
+          } else {
+            forcedBySecretData = true;
+          }
+        }
+
         const listName = line.match(/^(\s*-\s*name\s*:\s*)(.+?)\s*\r?$/i);
         if (listName) {
           pendingKey = listName[2].trim().replace(/^["']|["']$/g, "");
@@ -351,13 +440,23 @@ function redactFile(filePath) {
         const isValueLine = /^value$/i.test(trimmedKey);
         const effectiveKey = isValueLine && pendingKey ? pendingKey : trimmedKey;
         if (isValueLine) pendingKey = null;
-        if (!rawValue.trim() || !shouldRedact(effectiveKey, rawValue)) {
+        if (!rawValue.trim() || (!forcedBySecretData && !shouldRedact(effectiveKey, rawValue))) {
           return line;
         }
+
+        const trimmedValue = rawValue.trim();
+        if (MULTILINE_SCALAR_RE.test(trimmedValue)) {
+          inMultilineScalar = true;
+          multilineScalarKeyIndent = indent.length;
+          multilineScalarEmitted = false;
+          return line;
+        }
+
         const quoted = rawValue.match(/^(["'])([\s\S]*)\1$/);
         const newValue = quoted ? `${quoted[1]}${REDACTED}${quoted[1]}` : REDACTED;
         return `${indent}${rawKey}${sep}${newValue}${cr}`;
       })
+      .filter((l) => l !== null)
       .join("\n");
   }
 
