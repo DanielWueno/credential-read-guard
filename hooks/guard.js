@@ -293,9 +293,13 @@ function allow() {
   }
 
   if (toolName === "Grep") {
-    const target = `${ti.path || ""} ${ti.glob || ""}`;
-    if (isSensitiveFile(target)) {
-      return deny(`busqueda apuntando a un archivo de credenciales (${target.trim()})`);
+    const target = `${ti.path || ""} ${ti.glob || ""}`.trim();
+    // Se evaluan path y glob por separado, no concatenados: unidos en un solo
+    // string, el "$" de fin de patron (p.ej. "\.json$") deja de matchear en
+    // cuanto el otro campo agrega texto despues -- incluido un simple espacio
+    // final cuando uno de los dos viene vacio.
+    if (isSensitiveFile(ti.path || "") || isSensitiveFile(ti.glob || "")) {
+      return deny(`busqueda apuntando a un archivo de credenciales (${target})`);
     }
     if (isSecretHuntPattern(ti.pattern || "")) {
       return deny(`patron de busqueda apunta a extraer secretos ("${ti.pattern}")`);
@@ -309,7 +313,12 @@ function allow() {
       // sin pipes/redirecciones -- en cualquier otro caso, deny sin contenido.
       const single = cmd.match(/^\s*\S+\s+"?([^"|>&;]+?)"?\s*$/);
       const target = single ? single[1].trim() : null;
-      if (isSensitiveFile(cmd)) {
+      // isSensitiveFile(cmd) por si solo casi nunca matchea: el comando real
+      // trae el binario y flags antes de la ruta, y cualquier comilla de
+      // cierre despues de la extension (el caso comun -- "cat \"x.json\"")
+      // ya rompe el "$" de fin de patron. "target" (ruta ya sin comillas)
+      // es el chequeo que de verdad cubre el caso comun.
+      if (isSensitiveFile(cmd) || (target && isSensitiveFile(target))) {
         return deny(`comando lee un archivo de credenciales: ${cmd}`, target ? redactFile(target) : null);
       }
       const yamlRedacted = yamlEmbeddedSecretRedaction(target);
