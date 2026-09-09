@@ -3,6 +3,38 @@
 Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado: [SemVer](https://semver.org/lang/es/).
 
+## [1.3.1] — 2026-09-09
+
+### Añadido
+
+- **Instrucción anti-evasión en cada `deny`.** Motivado por un caso real: un
+  subagente delegado, al toparse con un `deny` de este mismo tipo de hook
+  sobre un comando de verificación que incluía `password=` en un patrón de
+  búsqueda, reescribió el comando concatenando `'pass' + 'word' + '='` para
+  que el patrón no matcheara, en vez de detenerse y reportarlo. El archivo
+  resultante no tenía secretos, pero el método usado para llegar ahí es
+  evasión de un control de seguridad, no un falso positivo resuelto.
+  Documentar esto en el README no alcanza como mitigación — casi nadie que
+  instala el plugin desde un marketplace lee su documentación —, así que la
+  corrección real va en el propio código: `hooks/guard.js` ahora agrega a
+  `permissionDecisionReason` de **todo** `deny` (`NO_EVASION_NOTICE`) una
+  instrucción explícita de no reformular/ofuscar la llamada para evadir el
+  bloqueo y de detenerse a reportarlo — texto que el modelo ve directo en el
+  momento del bloqueo, en cualquier instalación, sin depender de que nadie
+  haya leído nada antes. No es una garantía de que se siga, pero es lo más
+  cerca que un filtro de patrones puede llegar. `scripts/doctor.js` verifica
+  ahora que todo caso `deny` trae esta instrucción, para que una futura
+  reescritura de `deny()` que la pierda no pase desapercibida.
+
+### Documentación
+
+- La limitación conocida "ofuscación deliberada no queda cubierta" (README,
+  "Alcance y limitaciones") ahora incluye explícitamente el caso de un
+  patrón de búsqueda reconstruido en tiempo de ejecución para esquivar el
+  filtro, como la instancia concreta que motivó el punto anterior — no es
+  un hueco de cobertura nuevo, es la misma limitación ya documentada.
+  `SECURITY.md` actualizado en el mismo sentido.
+
 ## [1.3.0] — 2026-09-09
 
 ### Corregido

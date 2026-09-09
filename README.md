@@ -92,9 +92,25 @@ de datos (DLP). Limitaciones conocidas:
   comportamiento interno del script.
 - **Ofuscación deliberada no queda cubierta** — nombres de archivo
   construidos a partir de variables de shell, variaciones de mayúsculas/
-  minúsculas fuera del alcance de la expresión regular, o comandos de
+  minúsculas fuera del alcance de la expresión regular, comandos de
   lectura no incluidos en la lista (`sed`, `awk`, `perl -pe`, editores de
-  texto invocados vía `Bash`).
+  texto invocados vía `Bash`), o un patrón de búsqueda reconstruido en
+  tiempo de ejecución para que no matchee (por ejemplo, concatenar
+  `'pass' + 'word' + '='` en una condición de `grep`/`Select-String` en
+  vez de escribir `password=` literal, para que el hook no lo reconozca).
+  Este hook es un filtro determinista sobre el texto de la llamada, no un
+  sistema que entienda intención: ningún regex adicional puede impedir que
+  el propio modelo, un subagente delegado, o un script que Claude genera
+  decida evadir activamente el patrón en vez de detenerse ante un `deny`.
+  Documentarlo aquí no alcanza como mitigación — casi nadie que instala el
+  plugin desde un marketplace lee el README —, así que la instrucción real
+  no depende de que se lea esto: cada `deny` de `hooks/guard.js` incluye,
+  en `permissionDecisionReason` (lo que el modelo ve directo en el momento
+  del bloqueo, en cualquier instalación), una instrucción explícita de no
+  reformular ni ofuscar la llamada para evadirlo, y de detenerse a
+  reportarlo en su lugar. No es una garantía — sigue siendo una instrucción
+  que el modelo podría no seguir —, pero es lo más cerca que este plugin
+  puede llegar sin dejar de ser un filtro de patrones.
 - **Los servidores MCP de terceros quedan fuera de alcance.** El hook
   únicamente intercepta las herramientas nativas de Claude Code
   (`Read`/`Grep`/`Bash`/`PowerShell`).
