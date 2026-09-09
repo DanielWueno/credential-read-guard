@@ -55,6 +55,15 @@ se bloquea con la version redactada; si no encontro nada, se permite sin
 tocarlo. Esto es distinto de todos los demas patrones de este plugin, que
 son unicamente por nombre de archivo.
 
+Por nombre de clave, la redacción cubre `password`/`pwd`/`secret`/`token`/
+`salt`/`api_key`/`connectionstring`, además de un sufijo `Key` genérico
+(`AppKey`, `SigningKey`, `EncryptionKey`, `API_KEY`, `signing-key`) sin
+importar el nombre que lo precede. Independientemente del nombre de la
+clave, además, cualquier valor con forma `esquema://usuario:contraseña@host`
+(el formato que usan connection strings de AMQP, MongoDB, Postgres, Redis,
+MySQL o RabbitMQ) se redacta igual — así una clave genérica como `Uri` o
+`Endpoint` no deja pasar la credencial que contiene.
+
 Ademas, dentro de esos
 mismos archivos, cualquier IP (IPv4) con puerto opcional (`IP:puerto` o,
 formato SQL Server, `IP,puerto`) se redacta sin importar la clave o el
@@ -93,8 +102,8 @@ de datos (DLP). Limitaciones conocidas:
 - **Ofuscación deliberada no queda cubierta** — nombres de archivo
   construidos a partir de variables de shell, variaciones de mayúsculas/
   minúsculas fuera del alcance de la expresión regular, comandos de
-  lectura no incluidos en la lista (`sed`, `awk`, `perl -pe`, editores de
-  texto invocados vía `Bash`), o un patrón de búsqueda reconstruido en
+  lectura no incluidos en la lista (editores de texto invocados vía
+  `Bash`, por ejemplo `vim`/`nano`), o un patrón de búsqueda reconstruido en
   tiempo de ejecución para que no matchee (por ejemplo, concatenar
   `'pass' + 'word' + '='` en una condición de `grep`/`Select-String` en
   vez de escribir `password=` literal, para que el hook no lo reconozca).
@@ -126,10 +135,14 @@ de datos (DLP). Limitaciones conocidas:
   que su estructura no se analiza actualmente (o, en el caso de
   `kubeconfig`, porque se trata como opaco a propósito).
 - **La detección en YAML es por línea, no un parser YAML real.** Reconoce
-  un mapeo plano (`CLAVE: valor`) y el patrón de lista de Kubernetes/Helm
-  (`- name: X` seguido de `value: Y`), pero no escalares de bloque
-  multilínea (`|`, `>`) ni un `Secret` de Kubernetes con valores en
-  `base64` bajo una clave sin nombre reconocible.
+  un mapeo plano (`CLAVE: valor`), el patrón de lista de Kubernetes/Helm
+  (`- name: X` seguido de `value: Y`), un bloque `data:`/`stringData:`
+  completo de un `kind: Secret` (todo valor bajo esas claves se redacta sin
+  importar el nombre de la clave hija) y un escalar de bloque multilínea
+  (`|`, `>`) bajo una clave que se redacta (el cuerpo completo colapsa a un
+  único marcador). Sigue sin ser un parser YAML real: no maneja YAML
+  anidado arbitrario, listas dentro de `data`/`stringData`, ni estilo
+  *flow* (`{clave: valor}`) o anclas/alias.
 
 Este plugin constituye un control adicional contra el caso común — Claude
 leyendo `appsettings.Development.json` porque lo consideró relevante, o
@@ -244,7 +257,7 @@ está funcionando.
 /credential-read-guard:doctor
 ```
 
-Corre el mismo `hooks/guard.js` contra los seis fixtures incluidos
+Corre el mismo `hooks/guard.js` contra los 10 fixtures incluidos
 (secretos ficticios, valor `estoNoSePinta`) y confirma que cada uno se
 comporta como se documenta: los primeros cuatro con `deny` (tres con
 estructura mixta, redactados — incluido `demo-crlf.env`, con finales de
@@ -274,7 +287,7 @@ Claude Code. Eso es justamente lo que permite que tu contenido real nunca
 llegue al modelo, solo el veredicto — pero también significa que `doctor`
 prueba que la lógica de `guard.js` es correcta (los patrones matchean, la
 redacción funciona), no que el `PreToolUse` esté realmente enganchado a
-*esta* sesión. Puede pasar los diez casos sin un solo fallo y aun así el
+*esta* sesión. Puede pasar todos los casos sin un solo fallo y aun así el
 hook real no estar interceptando nada, si por ejemplo el proceso que
 Claude Code usa para correr hooks en este entorno no encuentra `node` en
 el PATH, o el plugin quedó instalado después de que la sesión ya había
@@ -308,7 +321,7 @@ script de Node corriente que se puede invocar en tu propia terminal, sin
 abrir Claude Code:
 
 ```bash
-node scripts/doctor.js                       # los 4 fixtures de examples/
+node scripts/doctor.js                       # los 10 fixtures de examples/
 node scripts/doctor.js ruta/a/tu/archivo.json # un archivo propio
 ```
 
@@ -348,7 +361,7 @@ actualización sin que nadie lo vuelva a tocar. Desde cualquier proyecto,
 en cualquier terminal:
 
 ```bash
-credguard                 # los 4 fixtures de examples/
+credguard                 # los 10 fixtures de examples/
 credguard ruta/archivo    # un archivo propio, sin exponer su contenido
 credguard ignore ...      # gestiona .credentialguardignore -- "credguard ignore" para su ayuda
 ```

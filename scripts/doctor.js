@@ -26,6 +26,13 @@ const BUILTIN_CASES = [
     ],
   },
   {
+    file: "examples/appsettings.gaps.demo.json",
+    expect: "deny",
+    mustRedact: true,
+    mustNotContain: ["estoNoSePinta"],
+    mustContain: ["InfoNoSensible", "este valor debe seguir visible sin cambios"],
+  },
+  {
     file: "examples/demo.env",
     expect: "deny",
     mustRedact: true,
@@ -47,12 +54,83 @@ const BUILTIN_CASES = [
     expect: "allow",
     mustRedact: false,
   },
+  // Claves con sufijo generico Auth/Credential: el nombre no dice que haya un
+  // secreto (no matchea secretKeyRe ni termina en "Key"), asi que la decision
+  // la toma el valor. Los dos "mustNotContain" son las dos vias -- hex
+  // estricto (H=4.00, POR DEBAJO del umbral de Shannon: si el hex no tuviera
+  // su propio camino, este valor pasaria visible) y token alfanumerico
+  // (H=5.00, via entropia). Los "mustContain" son el contra-experimento: la
+  // misma FORMA de clave con valores que no son credenciales (basic, none, una
+  // frase, una URL de endpoint, un GUID de tenant) tiene que seguir visible,
+  // porque si no, ampliar la lista de palabras clave habria cambiado un falso
+  // negativo por un archivo entero redactado.
+  {
+    file: "examples/appsettings.generic-keys.demo.json",
+    expect: "deny",
+    mustRedact: true,
+    mustNotContain: ["9f8e7d6c5b4a39281706f5e4d3c2b1a0", "Xq7Rm2Zt9Kv4Lb8Nw3Pj6Hy1Fd5Gs0Ac"],
+    mustContain: [
+      '"AuthMode": "basic"',
+      '"CredentialType": "none"',
+      "rotacion manual cada 90 dias",
+      "login.example.com/oauth2",
+      "550e8400-e29b-41d4-a716-446655440000",
+      "este valor debe seguir visible sin cambios",
+    ],
+  },
+  // El mismo criterio en la rama YAML de redactFile(), y por el camino de
+  // yamlEmbeddedSecretRedaction(): este nombre de archivo no matchea ningun
+  // patron de SENSITIVE_FILE_RE, asi que el deny solo puede venir de que la
+  // redaccion encontro algo -- es decir, prueba que la deteccion por entropia
+  // tambien es lo que dispara el bloqueo, no solo lo que tacha valores.
+  {
+    file: "examples/generic-keys.demo.yaml",
+    expect: "deny",
+    mustRedact: true,
+    mustNotContain: ["Tw8Vb3Nq6Zx1Ly4Mk7Rj0Ph5Cd2Fs9Ga", "9f8e7d6c5b4a39281706f5e4d3c2b1a0"],
+    mustContain: [
+      "authMode: basic",
+      "credentialType: none",
+      "login.example.com/oauth2",
+      "550e8400-e29b-41d4-a716-446655440000",
+      "kind: ConfigMap",
+    ],
+  },
   {
     file: "examples/k8s-deployment.demo.yaml",
     expect: "deny",
     mustRedact: true,
     mustNotContain: ["estoNoSePinta", "10.20.30.50", "User ID=appuser"],
     mustContain: ["ASPNETCORE_BASEPATH", "/reyma/auditorias", "apiVersion: apps/v1"],
+  },
+  // Dos huecos de la rama YAML de redactFile() que no dependen del nombre de
+  // clave: (1) TODO valor bajo data:/stringData: de un kind: Secret es
+  // secreto por especificacion de Kubernetes, sin importar como se llame la
+  // clave ("app-config.json", "custom_flag" no matchean ninguna heuristica
+  // de nombre); (2) un escalar multilinea ("tls.key: |") bajo una clave que
+  // se redacta tiene su valor real en las lineas siguientes, no en la linea
+  // "clave: |". El segundo documento (kind: ConfigMap, separado por "---")
+  // prueba que el estado de Secret no se arrastra entre documentos: la misma
+  // clave "data:" ahi no activa la regla 1, y su contenido no sensible sigue
+  // visible.
+  {
+    file: "examples/k8s-secret.demo.yaml",
+    expect: "deny",
+    mustRedact: true,
+    mustNotContain: [
+      "ZmFrZS1iYXNlNjQtdmFsdWUtbm8tcmVhbC1zZWNyZXQ=",
+      "ZmFrZS1mbGFnLXZhbHVlLW5vLXJlYWw=",
+      "config de ejemplo no sensible en texto plano",
+      "valor-de-ejemplo-no-sensible-en-texto-plano",
+      "-----BEGIN PRIVATE KEY-----",
+      "ZmFrZUtleUxpbmVPbmVOb1JlYWxTZWNyZXRNYXRlcmlhbA==",
+      "ZmFrZUtleUxpbmVUd29BbHNvTm90UmVhbA==",
+      "-----END PRIVATE KEY-----",
+    ],
+    mustContain: [
+      "este texto no es sensible y debe seguir visible",
+      "kind: ConfigMap",
+    ],
   },
 ];
 
@@ -120,6 +198,30 @@ const TOOL_SURFACE_CASES = [
     mustNotContain: ["estoNoSePinta"],
   },
   {
+    describe: 'PowerShell: Get-Content -Path "appsettings.demo.json" (flag antes de la ruta entre comillas)',
+    file: "examples/appsettings.demo.json",
+    run: (abs) => runGuardWithInput("PowerShell", { command: `Get-Content -Path "${abs}"` }),
+    expect: "deny",
+    mustRedact: true,
+    mustNotContain: ["estoNoSePinta"],
+  },
+  {
+    describe: 'PowerShell: Get-Content "appsettings.demo.json" -Raw (flag despues de la ruta entre comillas)',
+    file: "examples/appsettings.demo.json",
+    run: (abs) => runGuardWithInput("PowerShell", { command: `Get-Content "${abs}" -Raw` }),
+    expect: "deny",
+    mustRedact: true,
+    mustNotContain: ["estoNoSePinta"],
+  },
+  {
+    describe: "Bash: cat -A appsettings.demo.json (flag antes de la ruta sin comillas)",
+    file: "examples/appsettings.demo.json",
+    run: (abs) => runGuardWithInput("Bash", { command: `cat -A ${abs}` }),
+    expect: "deny",
+    mustRedact: true,
+    mustNotContain: ["estoNoSePinta"],
+  },
+  {
     describe: "Grep: path a appsettings.demo.json sin glob",
     file: "examples/appsettings.demo.json",
     run: (abs) => runGuardWithInput("Grep", { path: abs, pattern: "." }),
@@ -131,6 +233,79 @@ const TOOL_SURFACE_CASES = [
     file: "examples/normal-config.json",
     run: (abs) => runGuardWithInput("Bash", { command: `cat "${abs}"` }),
     expect: "allow",
+    mustRedact: false,
+  },
+  {
+    describe: "Bash: tar -cf - appsettings.demo.json (utilidad de archivo no cubierta antes)",
+    file: "examples/appsettings.demo.json",
+    run: (abs) => runGuardWithInput("Bash", { command: `tar -cf - ${abs}` }),
+    expect: "deny",
+    mustRedact: true,
+    mustNotContain: ["estoNoSePinta"],
+  },
+  {
+    describe: "Bash: awk '{print}' appsettings.demo.json (utilidad de texto no cubierta antes)",
+    file: "examples/appsettings.demo.json",
+    run: (abs) => runGuardWithInput("Bash", { command: `awk '{print}' ${abs}` }),
+    expect: "deny",
+    mustRedact: true,
+    mustNotContain: ["estoNoSePinta"],
+  },
+  {
+    describe: "Bash: sed -n 'p' appsettings.demo.json (utilidad de texto no cubierta antes)",
+    file: "examples/appsettings.demo.json",
+    run: (abs) => runGuardWithInput("Bash", { command: `sed -n 'p' ${abs}` }),
+    expect: "deny",
+    mustRedact: true,
+    mustNotContain: ["estoNoSePinta"],
+  },
+  {
+    describe: "Bash: awk '{print}' normal-config.json (mismo verbo, no deberia bloquear)",
+    file: "examples/normal-config.json",
+    run: (abs) => runGuardWithInput("Bash", { command: `awk '{print}' ${abs}` }),
+    expect: "allow",
+    mustRedact: false,
+  },
+  {
+    describe:
+      'Bash: python -c "import os; print(open(\'.env\').read())" (fixture embebido dentro del string de codigo, con ; y () que activan hasChaining)',
+    file: "examples/demo.env",
+    run: () =>
+      runGuardWithInput("Bash", {
+        command: `python -c "import os; print(open('.env').read())"`,
+      }),
+    expect: "deny",
+    mustRedact: false,
+  },
+  {
+    describe:
+      'Bash: node -e "console.log(fs.readFileSync(\'.env\',\'utf8\'))" (fixture embebido, sin caracteres de chaining en el comando)',
+    file: "examples/demo.env",
+    run: () =>
+      runGuardWithInput("Bash", {
+        command: `node -e "console.log(fs.readFileSync('.env','utf8'))"`,
+      }),
+    expect: "deny",
+    mustRedact: false,
+  },
+  {
+    describe: 'Bash: perl -pe "open(FH, \'.env\'); print <FH>;" (fixture embebido, ; y <> activan hasChaining)',
+    file: "examples/demo.env",
+    run: () =>
+      runGuardWithInput("Bash", {
+        command: `perl -pe "open(FH, '.env'); print <FH>;"`,
+      }),
+    expect: "deny",
+    mustRedact: false,
+  },
+  {
+    describe: 'Bash: ruby -e "puts File.read(\'.env\')" (fixture embebido dentro del string de codigo)',
+    file: "examples/demo.env",
+    run: () =>
+      runGuardWithInput("Bash", {
+        command: `ruby -e "puts File.read('.env')"`,
+      }),
+    expect: "deny",
     mustRedact: false,
   },
 ];
