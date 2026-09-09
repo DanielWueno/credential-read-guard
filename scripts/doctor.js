@@ -56,8 +56,8 @@ const BUILTIN_CASES = [
   },
 ];
 
-function runGuard(filePath) {
-  const input = JSON.stringify({ tool_name: "Read", tool_input: { file_path: filePath } });
+function runGuardWithInput(toolName, toolInput) {
+  const input = JSON.stringify({ tool_name: toolName, tool_input: toolInput });
   const result = spawnSync(process.execPath, [GUARD], {
     input,
     encoding: "utf8",
@@ -81,6 +81,51 @@ function runGuard(filePath) {
     : null;
   return { decision: out.permissionDecision || "allow", redacted };
 }
+
+function runGuard(filePath) {
+  return runGuardWithInput("Read", { file_path: filePath });
+}
+
+// Ademas de "Read" con file_path limpio, el hook tiene que cubrir las formas
+// en que un modelo realmente pide ver un archivo por shell -- con la ruta
+// entre comillas (el caso mas comun, no uno raro) y por Grep apuntando solo a
+// "path" sin "glob". Estos casos existen porque una version anterior del hook
+// los dejaba pasar en silencio: el "$" de fin de patron que reconoce el
+// nombre del archivo (p.ej. "\.json$") se rompe en cuanto aparece cualquier
+// caracter despues -- una comilla de cierre, o el espacio que queda al unir
+// "path" y "glob" cuando uno de los dos viene vacio.
+const TOOL_SURFACE_CASES = [
+  {
+    describe: 'Bash: cat "appsettings.demo.json" (ruta entre comillas)',
+    file: "examples/appsettings.demo.json",
+    run: (abs) => runGuardWithInput("Bash", { command: `cat "${abs}"` }),
+    expect: "deny",
+    mustRedact: true,
+    mustNotContain: ["estoNoSePinta"],
+  },
+  {
+    describe: 'PowerShell: Get-Content "appsettings.demo.json" (ruta entre comillas)',
+    file: "examples/appsettings.demo.json",
+    run: (abs) => runGuardWithInput("PowerShell", { command: `Get-Content "${abs}"` }),
+    expect: "deny",
+    mustRedact: true,
+    mustNotContain: ["estoNoSePinta"],
+  },
+  {
+    describe: "Grep: path a appsettings.demo.json sin glob",
+    file: "examples/appsettings.demo.json",
+    run: (abs) => runGuardWithInput("Grep", { path: abs, pattern: "." }),
+    expect: "deny",
+    mustRedact: false,
+  },
+  {
+    describe: 'Bash: cat "normal-config.json" (no deberia bloquear)',
+    file: "examples/normal-config.json",
+    run: (abs) => runGuardWithInput("Bash", { command: `cat "${abs}"` }),
+    expect: "allow",
+    mustRedact: false,
+  },
+];
 
 function checkBuiltin() {
   let failures = 0;
@@ -121,6 +166,40 @@ function checkBuiltin() {
   return failures;
 }
 
+function checkToolSurfaces() {
+  let failures = 0;
+  console.log("Mismos archivos, vistos por Bash/PowerShell/Grep en vez de Read:\n");
+  for (const c of TOOL_SURFACE_CASES) {
+    const abs = path.join(PLUGIN_ROOT, c.file);
+    const { decision, redacted } = c.run(abs);
+    const problems = [];
+
+    if (decision !== c.expect) {
+      problems.push(`se esperaba "${c.expect}", se obtuvo "${decision}"`);
+    }
+    if (c.mustRedact && !redacted) {
+      problems.push("se esperaba contenido redactado y no vino ninguno");
+    }
+    if (!c.mustRedact && redacted) {
+      problems.push("no se esperaba contenido redactado, pero vino uno");
+    }
+    for (const s of c.mustNotContain || []) {
+      if (redacted && redacted.includes(s)) {
+        problems.push(`el valor sensible "${s}" sigue visible sin redactar`);
+      }
+    }
+
+    const ok = problems.length === 0;
+    if (!ok) failures++;
+    console.log(
+      `  ${ok ? "✓" : "✗"} ${c.describe} — ${decision}` +
+        (problems.length ? "\n      " + problems.join("\n      ") : "")
+    );
+  }
+  console.log();
+  return failures;
+}
+
 function checkCustom(target) {
   const abs = path.isAbsolute(target) ? target : path.join(process.cwd(), target);
   if (!fs.existsSync(abs)) {
@@ -152,12 +231,13 @@ console.log(
 );
 
 if (!arg) {
-  const failures = checkBuiltin();
+  const failures = checkBuiltin() + checkToolSurfaces();
   if (failures > 0) {
-    console.error(`✗ ${failures} fixture(s) no se comportaron como se esperaba.`);
+    console.error(`✗ ${failures} caso(s) no se comportaron como se esperaba.`);
     process.exit(1);
   }
-  console.log(`✓ Los ${BUILTIN_CASES.length} fixtures de examples/ se comportan como documenta el README.`);
+  const total = BUILTIN_CASES.length + TOOL_SURFACE_CASES.length;
+  console.log(`✓ Los ${total} casos (fixtures de examples/ y las mismas rutas vistas por Bash/PowerShell/Grep) se comportan como documenta el README.`);
   console.log("\nPara probar un archivo propio: node scripts/doctor.js <ruta>");
   process.exit(0);
 } else {
