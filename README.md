@@ -102,8 +102,8 @@ de datos (DLP). Limitaciones conocidas:
 - **Ofuscación deliberada no queda cubierta** — nombres de archivo
   construidos a partir de variables de shell, variaciones de mayúsculas/
   minúsculas fuera del alcance de la expresión regular, comandos de
-  lectura no incluidos en la lista (`sed`, `awk`, `perl -pe`, editores de
-  texto invocados vía `Bash`), o un patrón de búsqueda reconstruido en
+  lectura no incluidos en la lista (editores de texto invocados vía
+  `Bash`, por ejemplo `vim`/`nano`), o un patrón de búsqueda reconstruido en
   tiempo de ejecución para que no matchee (por ejemplo, concatenar
   `'pass' + 'word' + '='` en una condición de `grep`/`Select-String` en
   vez de escribir `password=` literal, para que el hook no lo reconozca).
@@ -135,10 +135,14 @@ de datos (DLP). Limitaciones conocidas:
   que su estructura no se analiza actualmente (o, en el caso de
   `kubeconfig`, porque se trata como opaco a propósito).
 - **La detección en YAML es por línea, no un parser YAML real.** Reconoce
-  un mapeo plano (`CLAVE: valor`) y el patrón de lista de Kubernetes/Helm
-  (`- name: X` seguido de `value: Y`), pero no escalares de bloque
-  multilínea (`|`, `>`) ni un `Secret` de Kubernetes con valores en
-  `base64` bajo una clave sin nombre reconocible.
+  un mapeo plano (`CLAVE: valor`), el patrón de lista de Kubernetes/Helm
+  (`- name: X` seguido de `value: Y`), un bloque `data:`/`stringData:`
+  completo de un `kind: Secret` (todo valor bajo esas claves se redacta sin
+  importar el nombre de la clave hija) y un escalar de bloque multilínea
+  (`|`, `>`) bajo una clave que se redacta (el cuerpo completo colapsa a un
+  único marcador). Sigue sin ser un parser YAML real: no maneja YAML
+  anidado arbitrario, listas dentro de `data`/`stringData`, ni estilo
+  *flow* (`{clave: valor}`) o anclas/alias.
 
 Este plugin constituye un control adicional contra el caso común — Claude
 leyendo `appsettings.Development.json` porque lo consideró relevante, o
