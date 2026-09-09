@@ -275,7 +275,12 @@ function allow() {
 (async () => {
   let input;
   try {
-    input = JSON.parse(await readStdin());
+    // PowerShell antepone un BOM UTF-8 al canalizar texto a un proceso hijo
+    // por "|" (echo '...' | node hooks/guard.js) -- sin esto, JSON.parse
+    // truena con el BOM y el catch de abajo cae a allow() en silencio,
+    // exactamente el tipo de falla que este hook existe para evitar.
+    const BOM = String.fromCharCode(0xfeff);
+    input = JSON.parse((await readStdin()).replace(new RegExp("^" + BOM), ""));
   } catch {
     return allow();
   }
