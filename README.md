@@ -287,7 +287,7 @@ Claude Code. Eso es justamente lo que permite que tu contenido real nunca
 llegue al modelo, solo el veredicto — pero también significa que `doctor`
 prueba que la lógica de `guard.js` es correcta (los patrones matchean, la
 redacción funciona), no que el `PreToolUse` esté realmente enganchado a
-*esta* sesión. Puede pasar los diez casos sin un solo fallo y aun así el
+*esta* sesión. Puede pasar todos los casos sin un solo fallo y aun así el
 hook real no estar interceptando nada, si por ejemplo el proceso que
 Claude Code usa para correr hooks en este entorno no encuentra `node` en
 el PATH, o el plugin quedó instalado después de que la sesión ya había

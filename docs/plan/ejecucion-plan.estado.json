@@ -145,7 +145,9 @@
           "verificacion": "README.md ya no dice 'los diez casos' en esa frase; el texto describe el comportamiento sin depender de un conteo exacto que haya que mantener sincronizado a mano (p.ej. 'todos los casos' en vez de un número), o si se prefiere un número, que coincida con TOOL_SURFACE_CASES.length en scripts/doctor.js en el momento del commit.",
           "verificacion_comando": "node -e \"const fs=require('fs');const t=fs.readFileSync('README.md','utf8');if(/los diez casos/i.test(t))process.exit(1)\"",
           "horas_maquina": 0.25,
-          "estado": "pendiente",
+          "estado": "hecho",
+          "fecha_inicio": "2026-09-09",
+          "resultado": "Reemplazada mención hardcodeada de 'los diez casos' en README.md línea 290 por 'todos los casos', eliminando la dependencia de un conteo exacto que se desincronizaba con cada extensión de TOOL_SURFACE_CASES. Verificación: comando de validación ejecutado y pasó (exit code 0 -- patrón /los diez casos/i no encontrado).",
           "por_que_este_modelo": "Es un ajuste de texto puntual sin criterio de diseño en juego.",
           "archivos": "README.md",
           "rollback": "git revert del commit; solo toca texto de README.md."
