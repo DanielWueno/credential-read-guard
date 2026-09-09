@@ -249,12 +249,26 @@ function readStdin() {
   });
 }
 
+// El texto de permissionDecisionReason lo ve el modelo (o el subagente que
+// haya disparado la llamada) en el momento mismo del bloqueo -- a diferencia
+// de cualquier documentacion, esto llega a cada instalacion sin depender de
+// que alguien la haya leido antes. Por eso la instruccion anti-evasion va
+// aqui, en cada deny, y no solo en el README: cierra el hueco de que un
+// agente reformule/ofusque el comando para esquivar el patron (p.ej.
+// concatenar 'pass' + 'word' + '=' en vez de escribir el literal) en vez de
+// detenerse y reportar el bloqueo.
+const NO_EVASION_NOTICE =
+  "No reformules, ofusques ni reconstruyas en tiempo de ejecucion el " +
+  "archivo/patron/comando para evitar este bloqueo -- eso es evasion de un " +
+  "control de seguridad, no una forma valida de resolverlo. Detente y " +
+  "reportaselo a quien te delego la tarea.";
+
 function deny(reason, redactedContent) {
   const output = {
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
       permissionDecision: "deny",
-      permissionDecisionReason: `credential-read-guard: ${reason}`,
+      permissionDecisionReason: `credential-read-guard: ${reason}. ${NO_EVASION_NOTICE}`,
     },
   };
   if (redactedContent != null) {

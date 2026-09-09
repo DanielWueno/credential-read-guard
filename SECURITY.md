@@ -45,6 +45,17 @@ proyecto donde se usa, no en el plugin. Por eso interesan especialmente:
   de credenciales sin que se note. Revísalo como revisarías cualquier otro
   archivo de configuración antes de confiar en un repositorio ajeno.
 - **Las limitaciones ya documentadas en el README** (contenido de scripts que
-  Claude genera y luego ejecuta, ofuscación de nombres de archivo, servidores
-  MCP de terceros fuera de alcance, formatos sin estructura reconocida para
-  redactar). Son alcance conocido, no comportamiento inesperado.
+  Claude genera y luego ejecuta, ofuscación de nombres de archivo o de
+  patrones de búsqueda — incluido un modelo o subagente reconstruyendo en
+  tiempo de ejecución el texto que dispararía el bloqueo para que el hook no
+  lo reconozca —, servidores MCP de terceros fuera de alcance, formatos sin
+  estructura reconocida para redactar). Son alcance conocido, no
+  comportamiento inesperado: este hook es un filtro determinista sobre el
+  texto de la llamada, no una barrera contra un modelo que decida activamente
+  evadirlo en vez de detenerse ante un `deny`. Esa mitigación no depende de
+  que se lea este documento — casi nadie que instala vía marketplace lo
+  hace —: cada `deny` de `hooks/guard.js` lleva, en `permissionDecisionReason`,
+  una instrucción explícita al modelo de detenerse y reportar en vez de
+  reformular la llamada. Sigue siendo una instrucción, no una garantía —
+  reportar que un agente la ignoró de todas formas es información útil, pero
+  no cuenta como vulnerabilidad de este plugin en sí.

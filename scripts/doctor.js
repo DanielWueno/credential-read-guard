@@ -64,13 +64,13 @@ function runGuardWithInput(toolName, toolInput) {
     timeout: 5000,
   });
   const stdout = (result.stdout || "").trim();
-  if (!stdout) return { decision: "allow", redacted: null };
+  if (!stdout) return { decision: "allow", redacted: null, reason: null };
 
   let parsed;
   try {
     parsed = JSON.parse(stdout);
   } catch {
-    return { decision: "error", redacted: null, raw: stdout };
+    return { decision: "error", redacted: null, reason: null, raw: stdout };
   }
   const out = parsed.hookSpecificOutput || {};
   // additionalContext es un parrafo de instrucciones para Claude seguido de
@@ -80,8 +80,15 @@ function runGuardWithInput(toolName, toolInput) {
   const separatorIdx = out.additionalContext ? out.additionalContext.indexOf("\n\n") : -1;
   const redacted =
     separatorIdx === -1 ? out.additionalContext || null : out.additionalContext.slice(separatorIdx + 2);
-  return { decision: out.permissionDecision || "allow", redacted };
+  return { decision: out.permissionDecision || "allow", redacted, reason: out.permissionDecisionReason || null };
 }
+
+// Sustring estable de la instruccion anti-evasion que guard.js agrega a
+// TODO permissionDecisionReason (ver NO_EVASION_NOTICE en hooks/guard.js) --
+// se comprueba aqui, en cada caso "deny", para que una futura reescritura de
+// deny() que la pierda por accidente no pase desapercibida (igual que el
+// caso del marcador de redaccion en 1.2.4).
+const ANTI_EVASION_MARKER = "evasion de un control de seguridad";
 
 function runGuard(filePath) {
   return runGuardWithInput("Read", { file_path: filePath });
@@ -133,7 +140,7 @@ function checkBuiltin() {
   console.log("Fixtures incluidos (examples/):\n");
   for (const c of BUILTIN_CASES) {
     const abs = path.join(PLUGIN_ROOT, c.file);
-    const { decision, redacted } = runGuard(abs);
+    const { decision, redacted, reason } = runGuard(abs);
     const problems = [];
 
     if (decision !== c.expect) {
@@ -144,6 +151,9 @@ function checkBuiltin() {
     }
     if (!c.mustRedact && redacted) {
       problems.push("no se esperaba contenido redactado, pero vino uno");
+    }
+    if (c.expect === "deny" && !(reason && reason.includes(ANTI_EVASION_MARKER))) {
+      problems.push("el deny no trae la instruccion anti-evasion esperada");
     }
     for (const s of c.mustNotContain || []) {
       if (redacted && redacted.includes(s)) {
@@ -172,7 +182,7 @@ function checkToolSurfaces() {
   console.log("Mismos archivos, vistos por Bash/PowerShell/Grep en vez de Read:\n");
   for (const c of TOOL_SURFACE_CASES) {
     const abs = path.join(PLUGIN_ROOT, c.file);
-    const { decision, redacted } = c.run(abs);
+    const { decision, redacted, reason } = c.run(abs);
     const problems = [];
 
     if (decision !== c.expect) {
@@ -183,6 +193,9 @@ function checkToolSurfaces() {
     }
     if (!c.mustRedact && redacted) {
       problems.push("no se esperaba contenido redactado, pero vino uno");
+    }
+    if (c.expect === "deny" && !(reason && reason.includes(ANTI_EVASION_MARKER))) {
+      problems.push("el deny no trae la instruccion anti-evasion esperada");
     }
     for (const s of c.mustNotContain || []) {
       if (redacted && redacted.includes(s)) {
