@@ -3,6 +3,34 @@
 Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado: [SemVer](https://semver.org/lang/es/).
 
+## [1.3.2] — 2026-09-09
+
+### Corregido
+
+- **`secretKeyRe`/`embeddedSecretRe` dejaban pasar convenciones de nombre
+  comunes.** Reportado sobre un `appsettings.json` real con tres campos que
+  deberían haber quedado redactados y no lo hicieron: una clave `Uri` con un
+  connection string `amqps://usuario:contraseña@host` embebido (formato que
+  también usan MongoDB, Postgres, Redis, MySQL y RabbitMQ), una clave `Pass`
+  a secas, y una clave `AppKey` en PascalCase. Causa: `secretKeyRe` exigía
+  el substring completo `password`/`pwd` (no matcheaba `Pass`), `api_key`
+  exigía el prefijo `api` pegado a `key` (no matcheaba `AppKey`/`SigningKey`
+  /`EncryptionKey`), y `embeddedSecretRe` solo reconocía el patrón literal
+  `password=`/`pwd=`, no `usuario:contraseña@host` dentro de una URI.
+  `secretKeyRe` ahora también cubre `pass`/`passphrase`/`salt`, y un sufijo
+  `key` con separador (`API_KEY`, `signing-key`) o suelto (`Key` a secas);
+  una regex nueva, sensible a mayúscula a propósito (`pascalKeySuffixRe`),
+  cubre el sufijo `Key` en PascalCase/camelCase sin separador (`AppKey`,
+  `SigningKey`) sin atrapar palabras como `monkey`/`turkey`/`hockey` que
+  terminan en "key" en minúscula — verificado con un fixture ad hoc que
+  confirma que esos campos, junto con `Keyword` y `BypassOptions`, siguen
+  sin redactarse. `embeddedSecretRe` ahora también reconoce
+  `esquema://usuario:contraseña@host` en cualquier valor, sin importar el
+  nombre de la clave que lo contiene — el mismo enfoque que ya usaba para
+  `Password=` dentro de un connection string. Fixture nuevo:
+  `examples/appsettings.gaps.demo.json` (valores ficticios, no los del
+  reporte original).
+
 ## [1.3.1] — 2026-09-09
 
 ### Añadido

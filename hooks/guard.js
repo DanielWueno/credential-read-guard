@@ -143,14 +143,29 @@ function redactFile(filePath) {
   // "connection[_-]?strings?" en vez de "connectionstrings?" para cubrir
   // tambien la convencion SCREAMING_SNAKE_CASE de variables de entorno
   // (CONNECTION_STRING), comun en manifiestos de Kubernetes/YAML, no solo
-  // el ConnectionStrings de .NET.
-  const secretKeyRe = /password|pwd|secret|token|api[_-]?key|connection[_-]?strings?/i;
-  // Detecta credenciales embebidas DENTRO de un valor (p.ej. un connection
-  // string como "User ID=x;Password=y;Host=z;"), independientemente del
-  // nombre de la clave que lo contiene -- ese es el caso mas comun en
-  // ConnectionStrings.<NombreDeAmbiente>, donde la clave es un alias, no
-  // "password".
-  const embeddedSecretRe = /\b(password|pwd)\s*=/i;
+  // el ConnectionStrings de .NET. "_key\b|\bkey\b" cubre "API_KEY"/"app-key"/
+  // una clave llamada "Key" a secas -- pero no "AppKey"/"SigningKey" (sin
+  // separador, camelCase), porque "\b" no marca un limite entre dos letras.
+  // Ese caso lo cubre pascalKeySuffixRe, mas abajo (sensible a mayuscula a
+  // proposito, ver ese comentario).
+  const secretKeyRe = /pass(word|phrase)?|pwd|secret|token|salt|api[_-]?key|connection[_-]?strings?|_key\b|\bkey\b/i;
+  // Sufijo "Key" de una convencion PascalCase/camelCase (AppKey, SigningKey,
+  // EncryptionKey) sin separador -- "\b" no sirve aqui porque no hay limite
+  // de palabra entre "App" y "Key". En vez de un "key" en minuscula sin
+  // limites (que atraparia "monkey", "turkey", "hockey" como si fueran
+  // claves sensibles), esta regex exige la mayuscula literal de "Key" -- de
+  // ahi que NO lleve la bandera "i": una palabra como "monkey" escrita en
+  // minusculas nunca la matchea, pero "AppKey" si.
+  const pascalKeySuffixRe = /[a-z0-9]Key\b/;
+  // Detecta credenciales embebidas DENTRO de un valor, independientemente
+  // del nombre de la clave que lo contiene: el patron clasico "User
+  // ID=x;Password=y;Host=z;" (ConnectionStrings.<NombreDeAmbiente>, donde la
+  // clave es un alias, no "password"), y tambien el patron
+  // "esquema://usuario:contrasena@host" que usan AMQP/MongoDB/Postgres/
+  // Redis/MySQL/RabbitMQ -- una "Uri"/"Endpoint" con ese formato no
+  // matchea ni por nombre de clave ni por "password=" literal.
+  const embeddedSecretRe = /\b(password|pwd)\s*=|:\/\/[^/\s:]+:[^/\s@]+@/i;
+  const isSecretKey = (key) => secretKeyRe.test(key) || pascalKeySuffixRe.test(key);
 
   let redacted = null;
 
@@ -158,7 +173,7 @@ function redactFile(filePath) {
     redacted = content.replace(
       /("(?:[^"\\]|\\.)*")(\s*:\s*)("(?:[^"\\]|\\.)*")/g,
       (match, key, sep, value) => {
-        if (secretKeyRe.test(key) || embeddedSecretRe.test(value)) {
+        if (isSecretKey(key) || embeddedSecretRe.test(value)) {
           return `${key}${sep}"${REDACTED}"`;
         }
         return match;
@@ -171,7 +186,7 @@ function redactFile(filePath) {
         const m = line.match(/^([^=:#\s][^=:]*)([=:])(.*)\r?$/);
         if (!m) return line;
         const [, key, sep] = m;
-        return secretKeyRe.test(key) || /\.env(\..+)?$/i.test(filePath)
+        return isSecretKey(key) || /\.env(\..+)?$/i.test(filePath)
           ? `${key}${sep}${REDACTED}`
           : line;
       })
@@ -203,7 +218,7 @@ function redactFile(filePath) {
         const isValueLine = /^value$/i.test(trimmedKey);
         const effectiveKey = isValueLine && pendingKey ? pendingKey : trimmedKey;
         if (isValueLine) pendingKey = null;
-        if (!rawValue.trim() || !(secretKeyRe.test(effectiveKey) || embeddedSecretRe.test(rawValue))) {
+        if (!rawValue.trim() || !(isSecretKey(effectiveKey) || embeddedSecretRe.test(rawValue))) {
           return line;
         }
         const quoted = rawValue.match(/^(["'])([\s\S]*)\1$/);

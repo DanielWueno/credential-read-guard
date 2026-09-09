@@ -26,6 +26,13 @@ const BUILTIN_CASES = [
     ],
   },
   {
+    file: "examples/appsettings.gaps.demo.json",
+    expect: "deny",
+    mustRedact: true,
+    mustNotContain: ["estoNoSePinta"],
+    mustContain: ["InfoNoSensible", "este valor debe seguir visible sin cambios"],
+  },
+  {
     file: "examples/demo.env",
     expect: "deny",
     mustRedact: true,

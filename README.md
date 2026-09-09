@@ -55,6 +55,15 @@ se bloquea con la version redactada; si no encontro nada, se permite sin
 tocarlo. Esto es distinto de todos los demas patrones de este plugin, que
 son unicamente por nombre de archivo.
 
+Por nombre de clave, la redacción cubre `password`/`pwd`/`secret`/`token`/
+`salt`/`api_key`/`connectionstring`, además de un sufijo `Key` genérico
+(`AppKey`, `SigningKey`, `EncryptionKey`, `API_KEY`, `signing-key`) sin
+importar el nombre que lo precede. Independientemente del nombre de la
+clave, además, cualquier valor con forma `esquema://usuario:contraseña@host`
+(el formato que usan connection strings de AMQP, MongoDB, Postgres, Redis,
+MySQL o RabbitMQ) se redacta igual — así una clave genérica como `Uri` o
+`Endpoint` no deja pasar la credencial que contiene.
+
 Ademas, dentro de esos
 mismos archivos, cualquier IP (IPv4) con puerto opcional (`IP:puerto` o,
 formato SQL Server, `IP,puerto`) se redacta sin importar la clave o el
