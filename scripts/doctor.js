@@ -164,6 +164,79 @@ const TOOL_SURFACE_CASES = [
     expect: "allow",
     mustRedact: false,
   },
+  {
+    describe: "Bash: tar -cf - appsettings.demo.json (utilidad de archivo no cubierta antes)",
+    file: "examples/appsettings.demo.json",
+    run: (abs) => runGuardWithInput("Bash", { command: `tar -cf - ${abs}` }),
+    expect: "deny",
+    mustRedact: true,
+    mustNotContain: ["estoNoSePinta"],
+  },
+  {
+    describe: "Bash: awk '{print}' appsettings.demo.json (utilidad de texto no cubierta antes)",
+    file: "examples/appsettings.demo.json",
+    run: (abs) => runGuardWithInput("Bash", { command: `awk '{print}' ${abs}` }),
+    expect: "deny",
+    mustRedact: true,
+    mustNotContain: ["estoNoSePinta"],
+  },
+  {
+    describe: "Bash: sed -n 'p' appsettings.demo.json (utilidad de texto no cubierta antes)",
+    file: "examples/appsettings.demo.json",
+    run: (abs) => runGuardWithInput("Bash", { command: `sed -n 'p' ${abs}` }),
+    expect: "deny",
+    mustRedact: true,
+    mustNotContain: ["estoNoSePinta"],
+  },
+  {
+    describe: "Bash: awk '{print}' normal-config.json (mismo verbo, no deberia bloquear)",
+    file: "examples/normal-config.json",
+    run: (abs) => runGuardWithInput("Bash", { command: `awk '{print}' ${abs}` }),
+    expect: "allow",
+    mustRedact: false,
+  },
+  {
+    describe:
+      'Bash: python -c "import os; print(open(\'.env\').read())" (fixture embebido dentro del string de codigo, con ; y () que activan hasChaining)',
+    file: "examples/demo.env",
+    run: () =>
+      runGuardWithInput("Bash", {
+        command: `python -c "import os; print(open('.env').read())"`,
+      }),
+    expect: "deny",
+    mustRedact: false,
+  },
+  {
+    describe:
+      'Bash: node -e "console.log(fs.readFileSync(\'.env\',\'utf8\'))" (fixture embebido, sin caracteres de chaining en el comando)',
+    file: "examples/demo.env",
+    run: () =>
+      runGuardWithInput("Bash", {
+        command: `node -e "console.log(fs.readFileSync('.env','utf8'))"`,
+      }),
+    expect: "deny",
+    mustRedact: false,
+  },
+  {
+    describe: 'Bash: perl -pe "open(FH, \'.env\'); print <FH>;" (fixture embebido, ; y <> activan hasChaining)',
+    file: "examples/demo.env",
+    run: () =>
+      runGuardWithInput("Bash", {
+        command: `perl -pe "open(FH, '.env'); print <FH>;"`,
+      }),
+    expect: "deny",
+    mustRedact: false,
+  },
+  {
+    describe: 'Bash: ruby -e "puts File.read(\'.env\')" (fixture embebido dentro del string de codigo)',
+    file: "examples/demo.env",
+    run: () =>
+      runGuardWithInput("Bash", {
+        command: `ruby -e "puts File.read('.env')"`,
+      }),
+    expect: "deny",
+    mustRedact: false,
+  },
 ];
 
 function checkBuiltin() {

@@ -40,8 +40,16 @@ const BUILTIN_SECRET_KEYWORDS = [
   "connectionstrings?", "password\\s*=", "secret\\s*=", "api[_-]?key", "private[_-]?key",
 ];
 
-const READ_COMMAND_RE = /\b(cat|type|more|less|head|tail|get-content|gc|strings|xxd|hexdump|base64)\b/i;
+const READ_COMMAND_RE = /\b(cat|type|more|less|head|tail|get-content|gc|strings|xxd|hexdump|base64|tar|awk|sed|rev|jq|yq)\b/i;
 const SHELL_GREP_RE = /\b(grep|findstr|select-string)\b/i;
+// Invocacion de interprete en modo one-liner (python -c, node -e, perl -pe/-ne,
+// ruby -e): el archivo objetivo suele quedar embebido DENTRO del string de
+// codigo (ej. python -c "print(open('.env').read())"), no como argumento
+// posicional aislado -- ni el tokenizer de mas abajo ni un SENSITIVE_FILE_RE
+// anclado con "$" contra el comando completo lo detectan, porque el string de
+// codigo sigue despues del nombre del archivo. Ver isSensitiveFileLoose().
+const INTERPRETER_RE = /\b(python3?|node|ruby|perl)\b/i;
+const INLINE_FLAG_RE = /(^|\s)(-c|-e|-pe|-ne)(\s|$)/;
 const REDACTED = "«REDACTED-BY-credential-read-guard»";
 
 // Carga .credentialguardignore desde la raiz del proyecto (cwd del hook),
@@ -109,6 +117,23 @@ function isSensitiveFile(target) {
   if (!target) return false;
   if (EXCLUDE_FILE_RE && EXCLUDE_FILE_RE.test(target)) return false;
   return SENSITIVE_FILE_RE.test(target);
+}
+
+// Igual que SENSITIVE_FILE_RE, pero sin el ancla "$" de fin de patron -- para
+// buscar el nombre de un archivo sensible en cualquier punto de un string mas
+// largo (el codigo de un one-liner de interprete), no solo al final de todo
+// el texto evaluado.
+const SENSITIVE_FILE_RE_LOOSE = new RegExp(
+  [...BUILTIN_FILE_PATTERNS, ...custom.filePatterns]
+    .map((p) => (p.endsWith("$") ? p.slice(0, -1) : p))
+    .join("|"),
+  "i"
+);
+
+function isSensitiveFileLoose(text) {
+  if (!text) return false;
+  if (EXCLUDE_FILE_RE && EXCLUDE_FILE_RE.test(text)) return false;
+  return SENSITIVE_FILE_RE_LOOSE.test(text);
 }
 
 function isSecretHuntPattern(pattern) {
@@ -345,7 +370,8 @@ function allow() {
 
   if (toolName === "Bash" || toolName === "PowerShell") {
     const cmd = ti.command || "";
-    if (READ_COMMAND_RE.test(cmd)) {
+    const isInterpreterInline = INTERPRETER_RE.test(cmd) && INLINE_FLAG_RE.test(cmd);
+    if (READ_COMMAND_RE.test(cmd) || isInterpreterInline) {
       // Redaccion solo cuando el comando apunta a un unico archivo identificable
       // sin pipes/redirecciones -- en cualquier otro caso, deny sin contenido.
       // El target no es necesariamente el primer ni el ultimo argumento: un
@@ -369,6 +395,15 @@ function allow() {
       }
       if (isSensitiveFile(cmd) || (target && isSensitiveFile(target))) {
         return deny(`comando lee un archivo de credenciales: ${cmd}`, target ? redactFile(target) : null);
+      }
+      // python -c / node -e / perl -pe / ruby -e: el nombre del archivo suele
+      // ir DENTRO del string de codigo del interprete, no como token aislado
+      // ni al final del comando completo -- ninguno de los dos chequeos de
+      // arriba lo detecta. No hay un "target" resuelto para redactar (el
+      // archivo esta embebido en texto de codigo, no en una ruta limpia), asi
+      // que el deny va sin contenido.
+      if (isInterpreterInline && isSensitiveFileLoose(cmd)) {
+        return deny(`comando de interprete lee un archivo de credenciales: ${cmd}`);
       }
       const yamlRedacted = yamlEmbeddedSecretRedaction(target);
       if (yamlRedacted != null) {

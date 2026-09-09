@@ -57,7 +57,9 @@
           "verificacion": "node scripts/doctor.js sale en verde con casos nuevos en TOOL_SURFACE_CASES que cubren, como mínimo: python -c \"import os; print(open('.env').read())\" (fixture entre comillas simples DENTRO del string de código, no como token de shell separado), node -e \"console.log(fs.readFileSync('.env','utf8'))\", perl -pe/ruby -e equivalentes (todos expect deny), tar -cf - <fixture> (expect deny), awk '{print}' <fixture> (expect deny) y sed -n 'p' <fixture> (expect deny) -- y que el caso existente de normal-config.json con esos mismos verbos siga en allow, para confirmar que el regex ampliado no sobre-bloquea. Ojo con el tokenizer: en el patrón actual, el nombre del fixture queda embebido dentro del string de código del intérprete (entre comillas simples anidadas en la comilla doble del -c), no como argumento posicional limpio -- el tokenizador de argRe (guard.js) NO lo va a encontrar recorriendo args.slice(1). Por eso, cuando el comando invoca un intérprete (python|node|ruby|perl) con una bandera de ejecución en línea (-c|-e|-pe), la detección debe aplicar SENSITIVE_FILE_RE contra el string completo del comando (como ya hace isSensitiveFile(cmd) más abajo en el mismo bloque), no depender de encontrar el archivo como token aislado.",
           "verificacion_comando": "node scripts/doctor.js",
           "horas_maquina": 2,
-          "estado": "pendiente",
+          "estado": "hecho",
+          "fecha_inicio": "2026-09-09",
+          "resultado": "READ_COMMAND_RE ahora incluye tar|awk|sed|rev|jq|yq. Se añadió INTERPRETER_RE (python3?|node|ruby|perl) + INLINE_FLAG_RE (-c|-e|-pe|-ne) para detectar one-liners de intérprete, y SENSITIVE_FILE_RE_LOOSE (mismos patrones que SENSITIVE_FILE_RE sin el ancla '$' final) con isSensitiveFileLoose() para encontrar el nombre del archivo embebido dentro del string de código del intérprete, en vez de depender de encontrarlo como token aislado o al final del comando completo. En la rama Bash/PowerShell de hooks/guard.js, cuando isInterpreterInline es true y ninguno de los chequeos previos (target tokenizado / cmd completo anclado) detectó el archivo, se aplica isSensitiveFileLoose(cmd) y se deniega sin contenido redactado (no hay target resuelto para redactar). Se agregaron 8 casos nuevos a TOOL_SURFACE_CASES en scripts/doctor.js: tar -cf -, awk '{print}', sed -n 'p' (los tres con target tokenizable, mustRedact:true), awk '{print}' sobre normal-config.json (expect allow, confirma que el regex ampliado no sobre-bloquea), y python -c / node -e / perl -pe / ruby -e con el fixture '.env' embebido dentro del string de código (expect deny, mustRedact:false) -- cubriendo tanto el caso con caracteres de chaining reales dentro de las comillas (python, perl: ';', '<', '>' fuerzan hasChaining=true) como sin ellos (node, ruby), para probar que isSensitiveFileLoose funciona en ambas ramas. Verificación: `node scripts/doctor.js` sale en verde, 22/22 casos (14 builtin+tool-surface previos + 8 nuevos), incluyendo el caso allow de normal-config.json con los verbos nuevos.",
           "por_que_este_modelo": "Es extender un regex existente siguiendo el mismo patrón que ya usa el archivo (tokenizar, buscar el target entre los argumentos, más un camino alterno de match contra el string completo para el caso de intérprete+flag) -- no requiere rediseñar el mecanismo.",
           "archivos": "hooks/guard.js (READ_COMMAND_RE y la rama Bash/PowerShell), scripts/doctor.js (TOOL_SURFACE_CASES), posible fixture nuevo en examples/",
           "rollback": "git revert del commit que toca hooks/guard.js y scripts/doctor.js. Riesgo real si sale mal: un regex demasiado amplio bloquea comandos legítimos (ej. tar empacando un backup que no incluye el archivo sensible) -- por eso la verificación exige que el caso allow de normal-config.json siga pasando con los mismos verbos, no solo agregar casos deny."
@@ -125,6 +127,20 @@
           "por_que_este_modelo": "Es correr un comando y leer el código de salida -- no hay criterio que diseñar.",
           "archivos": "Ninguno esperado -- es una comprobación. Si falla, el hallazgo se convierte en su propio ítem (típicamente un requisito no documentado en Instalación).",
           "rollback": "No aplica -- es una comprobación, no cambia comportamiento del plugin."
+        },
+        {
+          "id": "3.3",
+          "titulo": "README.md línea ~286 dice 'Puede pasar los diez casos sin un solo fallo...' refiriéndose a los tool-surface cases de scripts/doctor.js, pero ese número ya estaba desactualizado antes de la ola 2 (eran 7, no 10) y con los casos que añadió 2.1 ahora son 15 -- el texto no cuenta nada dinámicamente, es un número hardcodeado que se desincroniza cada vez que se agrega un caso nuevo",
+          "modelo": "haiku",
+          "esfuerzo": "low",
+          "multiagente": false,
+          "verificacion": "README.md ya no dice 'los diez casos' en esa frase; el texto describe el comportamiento sin depender de un conteo exacto que haya que mantener sincronizado a mano (p.ej. 'todos los casos' en vez de un número), o si se prefiere un número, que coincida con TOOL_SURFACE_CASES.length en scripts/doctor.js en el momento del commit.",
+          "verificacion_comando": "node -e \"const fs=require('fs');const t=fs.readFileSync('README.md','utf8');if(/los diez casos/i.test(t))process.exit(1)\"",
+          "horas_maquina": 0.25,
+          "estado": "pendiente",
+          "por_que_este_modelo": "Es un ajuste de texto puntual sin criterio de diseño en juego.",
+          "archivos": "README.md",
+          "rollback": "git revert del commit; solo toca texto de README.md."
         }
       ]
     }
