@@ -1,5 +1,5 @@
 ---
-description: Instala `credguard`, un lanzador en tu PATH para scripts/doctor.js -- corre las pruebas de credential-read-guard desde cualquier terminal, sin buscar la ruta del plugin instalado
+description: Instala `credguard`, un lanzador en tu PATH para scripts/doctor.js y scripts/ignore.js -- corre las pruebas de credential-read-guard y gestiona .credentialguardignore desde cualquier terminal, sin buscar la ruta del plugin instalado
 ---
 
 Ejecuta, sin preguntarme nada primero:

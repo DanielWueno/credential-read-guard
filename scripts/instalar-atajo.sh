@@ -113,9 +113,11 @@ DIR="$(resolver_plugin)" || {
 
 case "${1:-}" in
   -h|--help|ayuda|help)
-    echo "credguard            corre los fixtures incluidos (examples/)"
-    echo "credguard <ruta>     corre el hook contra un archivo propio, sin exponer su contenido"
+    echo "credguard                corre los fixtures incluidos (examples/)"
+    echo "credguard <ruta>         corre el hook contra un archivo propio, sin exponer su contenido"
+    echo "credguard ignore ...     gestiona .credentialguardignore -- 'credguard ignore' sin mas para su ayuda"
     ;;
+  ignore) shift; exec node "$DIR/scripts/ignore.js" "$@" ;;
   *) exec node "$DIR/scripts/doctor.js" "$@" ;;
 esac
 CUERPO
@@ -154,6 +156,7 @@ echo -e "${GREEN}✓${NC} Atajo instalado. Desde cualquier proyecto, en la termi
 echo
 echo -e "  ${BOLD}credguard${NC}                 corre los 4 fixtures de examples/"
 echo -e "  ${BOLD}credguard ruta/archivo${NC}    revisa un archivo propio"
+echo -e "  ${BOLD}credguard ignore ...${NC}      gestiona .credentialguardignore ('credguard ignore' para su ayuda)"
 echo -e "  ${BOLD}credguard --help${NC}          esto mismo"
 echo
 
