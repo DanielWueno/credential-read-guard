@@ -1,10 +1,9 @@
 {
   "name": "credential-read-guard",
   "displayName": "Credential Read Guard",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Bloquea de forma deterministica (via PreToolUse hooks) que Claude lea archivos o busque strings de credenciales -- connection strings, .env, appsettings*.json, llaves privadas, kubeconfig, tfvars, etc. -- sin importar el stack del proyecto.",
   "author": {
     "name": "Daniel Wueno BP"
-  },
-  "hooks": "./hooks/hooks.json"
+  }
 }
