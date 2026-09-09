@@ -1,0 +1,130 @@
+{
+  "_leeme": "Ledger de ejecución del plan de ingeniería. Fuente de verdad del avance: sobrevive al reinicio del límite de sesión, a un /clear y a cerrar la terminal. Se avanza con /arnes-plan:plan-siguiente o `bash \"$ARNES/plan-run.sh\"` (un ítem por invocación, commit al final); `claude plugin list` dice dónde quedó instalado el arnés. Estados: pendiente | en_curso | hecho | bloqueado | descartado. Guía: el README del plugin.",
+  "schema_version": 1,
+  "_moneda": "horas_maquina aquí NO son horas de build/CI -- node scripts/doctor.js corre en segundos y no hay pipeline costoso. El recurso escaso en este proyecto es horas de juicio humano/de agente para diseñar un regex sin ReDoS ni falsos positivos y para revisar si una extensión de cobertura rompe alguno de los fixtures existentes. El número en cada ítem es una estimación de ese esfuerzo de diseño+revisión, no de cómputo.",
+  "olas": [
+    {
+      "ola": 1,
+      "nombre": "Red de seguridad y reproducibilidad",
+      "criterio_de_entrada": "Ninguno. Es la primera.",
+      "criterio_de_salida": "El README no contiene números de fixtures contradictorios entre secciones, y quedó confirmado en una sesión real de Claude Code (no vía doctor.js) si additionalContext llega al modelo en un deny o si el runtime de hooks lo descarta y solo expone permissionDecisionReason.",
+      "items": [
+        {
+          "id": "1.1",
+          "titulo": "El README dice 'seis fixtures' en la sección doctor y 'los 4 fixtures' en las otras dos (Sin pasar por Claude Code / Atajo credguard), pero scripts/doctor.js define 7 casos en BUILTIN_CASES",
+          "modelo": "haiku",
+          "esfuerzo": "low",
+          "multiagente": false,
+          "verificacion": "Las tres menciones de conteo de fixtures en README.md coinciden entre sí y con BUILTIN_CASES.length en scripts/doctor.js (7). No basta con que las cadenas viejas ('seis fixtures', 'los 4 fixtures') hayan desaparecido -- eso también pasaría en verde si alguien borra el párrafo entero o escribe un número distinto por error -- así que el comando exige además que el número correcto (7/siete) aparezca las tres veces.",
+          "verificacion_comando": "node -e \"const fs=require('fs');const t=fs.readFileSync('README.md','utf8');if(/seis fixtures/i.test(t)||/los 4 fixtures/i.test(t))process.exit(1);const m=t.match(/7 fixtures|siete fixtures/gi);if(!m||m.length<3)process.exit(1)\"",
+          "horas_maquina": 0.25,
+          "estado": "hecho",
+          "fecha_inicio": "2026-09-09",
+          "resultado": "Reemplazadas 3 menciones de conteo de fixtures en README.md (líneas 256, 320, 360) de 'seis fixtures' y 'los 4 fixtures' a '7 fixtures'. Verificación: comando de validación pasó exitosamente (exit code 0). Las tres referencias ahora coinciden entre sí y con BUILTIN_CASES.length en scripts/doctor.js.",
+          "por_que_este_modelo": "Es contar entradas de un array y hacer un reemplazo de texto en tres lugares -- no hay criterio de diseño en juego.",
+          "archivos": "README.md",
+          "rollback": "git revert del commit; solo toca texto de README.md, ningún comportamiento del hook cambia."
+        },
+        {
+          "id": "1.2",
+          "titulo": "Nadie confirmó en una sesión real de Claude Code si additionalContext llega al modelo en un deny, o si el runtime de hooks lo descarta en un permissionDecision:'deny' y solo expone permissionDecisionReason -- si esto último fuera cierto, la redacción con devolución de contexto (el mérito principal del plugin) nunca llegaría a Claude en ninguna instalación",
+          "modelo": "opus",
+          "esfuerzo": "medium",
+          "multiagente": false,
+          "verificacion": "En una sesión real de Claude Code (no doctor.js, que alimenta guard.js a mano por spawnSync y por eso no prueba el contrato del runner de hooks), la instrucción a Claude debe ser literal y explícita -- no 'lee examples/appsettings.demo.json' a secas, porque ante un deny el modelo puede optar por resumir el bloqueo ('No puedo leer este archivo porque contiene credenciales') en vez de reproducir el texto, lo que se leería como un falso negativo de observación (parecería que el runner descartó additionalContext cuando en realidad Claude decidió no citarlo). La instrucción correcta es: 'Lee examples/appsettings.demo.json y muéstrame literalmente el texto o mensaje exacto que devuelva el sistema o la herramienta, sin resumir ni parafrasear.' Confirmar si ESE texto reproducido contiene el marcador «REDACTED-BY-credential-read-guard». permissionDecisionReason SÍ se le inyecta siempre al modelo en un deny (a diferencia de additionalContext, que depende del runner) -- si additionalContext no aparece, la corrección NO es degradar a deny sin contenido: es mover el texto redactado dentro del propio permissionDecisionReason en deny() (hooks/guard.js), ej. `credential-read-guard: ${reason}. Estructura redactada:\\n\\n${redactedContent}. ${NO_EVASION_NOTICE}`. Ese cambio de deny() y su doctor.js correspondiente (ajustar runGuardWithInput para leer el contenido redactado también desde reason cuando additionalContext viene vacío) pasan a ser el ítem 2.4 si esta observación confirma el problema.",
+          "horas_maquina": 0.5,
+          "estado": "pendiente",
+          "por_que_este_modelo": "No hay oráculo automático: decidir si lo que Claude reprodujo en su respuesta es efectivamente el additionalContext (y no una alucinación reconstruyendo el archivo) es un juicio sobre un hallazgo dudoso, no algo que un comando pueda decidir solo.",
+          "archivos": "Ninguno todavía -- es observación. Si falla, el archivo a tocar sería hooks/guard.js (deny()), moviendo el contenido redactado a permissionDecisionReason en vez de additionalContext.",
+          "rollback": "No aplica cambio de código: es una observación en una sesión real. Si additionalContext no llega, el rollback es no tocar nada y abrir el hallazgo como su propio ítem en la ola 2 en vez de revertir algo."
+        }
+      ]
+    },
+    {
+      "ola": 2,
+      "nombre": "Deuda estructural que multiplica el coste de cada cambio",
+      "criterio_de_entrada": "Ola 1 cerrada: hay con qué verificar, y se sabe si additionalContext realmente llega al modelo.",
+      "criterio_de_salida": "node scripts/doctor.js pasa en verde incluyendo casos nuevos para bypasses de Bash/PowerShell vía intérpretes de scripting y utilidades de texto no cubiertas hoy, claves genéricas tipo Auth/Credential con un umbral de entropía como filtro secundario (no una lista de palabras que dispare falsos positivos), y Secrets de Kubernetes en YAML con datos en base64 o bloques escalares multilínea.",
+      "items": [
+        {
+          "id": "2.1",
+          "titulo": "READ_COMMAND_RE (hooks/guard.js) no reconoce tar, awk, sed -n, rev, jq, yq, ni one-liners de intérprete (python -c, node -e, perl -pe, ruby -e), así que un comando como python -c \"print(open('.env').read())\" hoy pasa como allow sin que ningún caso de TOOL_SURFACE_CASES lo señale",
+          "modelo": "sonnet",
+          "esfuerzo": "medium",
+          "multiagente": false,
+          "verificacion": "node scripts/doctor.js sale en verde con casos nuevos en TOOL_SURFACE_CASES que cubren, como mínimo: python -c \"import os; print(open('.env').read())\" (fixture entre comillas simples DENTRO del string de código, no como token de shell separado), node -e \"console.log(fs.readFileSync('.env','utf8'))\", perl -pe/ruby -e equivalentes (todos expect deny), tar -cf - <fixture> (expect deny), awk '{print}' <fixture> (expect deny) y sed -n 'p' <fixture> (expect deny) -- y que el caso existente de normal-config.json con esos mismos verbos siga en allow, para confirmar que el regex ampliado no sobre-bloquea. Ojo con el tokenizer: en el patrón actual, el nombre del fixture queda embebido dentro del string de código del intérprete (entre comillas simples anidadas en la comilla doble del -c), no como argumento posicional limpio -- el tokenizador de argRe (guard.js) NO lo va a encontrar recorriendo args.slice(1). Por eso, cuando el comando invoca un intérprete (python|node|ruby|perl) con una bandera de ejecución en línea (-c|-e|-pe), la detección debe aplicar SENSITIVE_FILE_RE contra el string completo del comando (como ya hace isSensitiveFile(cmd) más abajo en el mismo bloque), no depender de encontrar el archivo como token aislado.",
+          "verificacion_comando": "node scripts/doctor.js",
+          "horas_maquina": 2,
+          "estado": "pendiente",
+          "por_que_este_modelo": "Es extender un regex existente siguiendo el mismo patrón que ya usa el archivo (tokenizar, buscar el target entre los argumentos, más un camino alterno de match contra el string completo para el caso de intérprete+flag) -- no requiere rediseñar el mecanismo.",
+          "archivos": "hooks/guard.js (READ_COMMAND_RE y la rama Bash/PowerShell), scripts/doctor.js (TOOL_SURFACE_CASES), posible fixture nuevo en examples/",
+          "rollback": "git revert del commit que toca hooks/guard.js y scripts/doctor.js. Riesgo real si sale mal: un regex demasiado amplio bloquea comandos legítimos (ej. tar empacando un backup que no incluye el archivo sensible) -- por eso la verificación exige que el caso allow de normal-config.json siga pasando con los mismos verbos, no solo agregar casos deny."
+        },
+        {
+          "id": "2.2",
+          "titulo": "secretKeyRe (hooks/guard.js) no reconoce sufijos como Auth/Credential (ej. StripeAuth, ExternalServiceCredential) ni pascalKeySuffixRe los cubre (no terminan en 'Key'), así que hoy ese valor se redacta como si fuera texto no sensible en additionalContext",
+          "modelo": "opus",
+          "esfuerzo": "high",
+          "multiagente": false,
+          "verificacion": "node scripts/doctor.js sale en verde con fixtures nuevos que cubren DOS vías, no una sola (un umbral de Shannon sin normalizar falla en hex: el alfabeto hex tiene 16 símbolos, entropía máxima teórica log2(16)=4.0 bits/char, así que un umbral ingenuo de H>=4.0 clasifica TODO secreto puramente hexadecimal -- hashes SHA256, API keys en hex, llaves de 32 bytes -- como texto de baja entropía y lo deja sin redactar): (1) valor hexadecimal estricto (/^[0-9a-fA-F]{32,}$/) bajo una clave tipo ExternalServiceAuth/StripeCredential -- se redacta por longitud/densidad, sin pasar por el cálculo de Shannon; (2) valor alfanumérico/base64 genérico bajo esa misma forma de clave, con umbral de Shannon H>=4.2 (alfabeto mixto, máximo teórico 6 bits/char) -- se redacta. En ambos casos, un valor bajo con esa misma forma de clave (ej. 'AuthMode: basic', 'CredentialType: none') sigue visible sin redactar, para confirmar que el filtro de entropía evita falsos positivos por la sola ampliación de palabras clave.",
+          "verificacion_comando": "node scripts/doctor.js",
+          "horas_maquina": 3,
+          "estado": "pendiente",
+          "por_que_este_modelo": "El criterio ES el trabajo: decidir el umbral de entropía (y que necesita DOS vías -- hex estricto vs. alfanumérico genérico -- en vez de un único umbral de Shannon sin normalizar, que subestima secretos hex) sin repetir el error que el propio análisis señala en TruffleHog clásico (bloquear GUIDs, hashes de git, IDs de telemetría) requiere diseñar el oráculo, no solo ejecutar un cambio mecánico. Regla obligatoria de implementación: antes de pasar el valor capturado a la función de Shannon o al validador hex, aplicar `.trim().replace(/^[\"']|[\"']$/g, '')` -- el string capturado por las regex de JSON/YAML suele incluir las comillas envolventes o espacio inicial, y esos caracteres alteran la frecuencia p_i y sesgan la entropía calculada (falsos negativos en secretos reales, sobre todo los cortos, donde el peso relativo de dos comillas extra es mayor).",
+          "archivos": "hooks/guard.js (función de entropía de Shannon + detector hex estricto por separado, secretKeyRe / lista de sufijos genéricos), scripts/doctor.js, fixtures en examples/",
+          "rollback": "git revert del commit. Si el umbral elegido genera falsos positivos o falsos negativos ya en uso real, ajustar el umbral es un cambio de una constante, no una migración -- documentado aquí para que el ajuste no se confunda con un rollback completo de la función."
+        },
+        {
+          "id": "2.3",
+          "titulo": "redactFile() para YAML (hooks/guard.js) no reconoce los bloques data:/stringData: en base64/texto plano de un Secret de Kubernetes ni escalares multilínea (| o >), así que ese contenido pasa completo, sin redactar, en additionalContext cuando el archivo es un *.yaml/*.yml con esa forma",
+          "modelo": "sonnet",
+          "esfuerzo": "high",
+          "multiagente": false,
+          "verificacion": "node scripts/doctor.js sale en verde con un fixture nuevo (examples/k8s-secret.demo.yaml: kind: Secret con data: y stringData: -- ambos bloques, no solo data: -- con valores ficticios (base64 en data:, texto plano en stringData:) bajo claves arbitrarias que NO parecen credencial por su nombre -- ej. 'app-config.json:', 'custom_flag:' -- más un bloque escalar '|' con una llave privada ficticia, y un segundo documento tras un separador '---' con un recurso que NO es Secret y SÍ tiene una clave llamada 'data' con contenido no sensible, para confirmar que el flag no se arrastra entre documentos) donde el deny llega con los valores del Secret redactados y el contenido del documento no-Secret intacto. La heurística no puede depender del nombre de la clave bajo data:/stringData: (por especificación de Kubernetes, TODO valor ahí es secreto -- base64 en data:, texto plano en stringData: -- sin importar cómo se llame la clave) -- necesita un flag de estado contextual: si el documento contiene 'kind: Secret' y la línea actual está indentada bajo /(?:data|stringData):/ (más indentado que esa línea), CUALQUIER 'clave: valor' en ese bloque se redacta, sin pasar por isSecretKey(). El flag se apaga (a) en cuanto aparece una línea con la misma o menor indentación que el bloque que no sea parte de él, y (b) SIEMPRE al encontrar una línea que empiece por '---' (separador de documento) -- kind: Secret e inSecretDataBlock son estado por-documento, no deben sobrevivir a un nuevo recurso en el mismo archivo.",
+          "verificacion_comando": "node scripts/doctor.js",
+          "horas_maquina": 3,
+          "estado": "pendiente",
+          "por_que_este_modelo": "Ampliar una heurística de línea existente sin introducir un parser YAML nuevo es trabajo de implementación guiado por los patrones que el archivo ya usa (pendingKey, regex de indentación) más un flag de estado nuevo (inSecretDataBlock) con reseteo explícito por documento -- no una decisión de diseño abierta.",
+          "archivos": "hooks/guard.js (redactFile, rama YAML), scripts/doctor.js, examples/k8s-secret.demo.yaml (nuevo fixture)",
+          "rollback": "git revert del commit; la detección de YAML sigue siendo por línea/heurística después del cambio, no hay estado persistente ni migración que deshacer."
+        }
+      ]
+    },
+    {
+      "ola": 3,
+      "nombre": "Que esto lo pueda usar alguien que no seas tú",
+      "criterio_de_entrada": "Ola 2 cerrada.",
+      "criterio_de_salida": "La sección 'Alcance y limitaciones' del README refleja exactamente lo que hooks/guard.js hace después de la ola 2 (ni de más ni de menos), y un clon nuevo del repositorio, sin nada más instalado que Node, pasa node scripts/doctor.js sin que nadie le explique nada.",
+      "items": [
+        {
+          "id": "3.1",
+          "titulo": "La sección 'Alcance y limitaciones' del README todavía lista como no cubiertos los huecos que la ola 2 cerró (scripting one-liners, claves Auth/Credential, Secret de Kubernetes en YAML), y no documenta los que siguen abiertos a propósito (ej. ofuscación deliberada, MCP de terceros)",
+          "modelo": "sonnet",
+          "esfuerzo": "medium",
+          "multiagente": false,
+          "verificacion": "Cada límite que la ola 2 cerró ya no aparece listado como limitación en README.md, y los límites que siguen abiertos a propósito (ofuscación deliberada, scripts internos no inspeccionados, MCP de terceros) siguen documentados -- revisión manual línea por línea contra el código de hooks/guard.js resultante de la ola 2, más la suite en verde como piso mínimo.",
+          "verificacion_comando": "node scripts/doctor.js",
+          "horas_maquina": 1,
+          "estado": "pendiente",
+          "por_que_este_modelo": "Es reconciliar prosa contra código ya cerrado -- no hay diseño nuevo, solo consistencia editorial.",
+          "archivos": "README.md (sección Alcance y limitaciones, y Patrones cubiertos si corresponde)",
+          "rollback": "git revert del commit; solo toca texto de README.md."
+        },
+        {
+          "id": "3.2",
+          "titulo": "No hay ninguna comprobación de que un clon nuevo del repositorio, sin nada más instalado que Node, pase node scripts/doctor.js -- hoy esa garantía depende de que quien lo pruebe ya tenga el checkout de trabajo actual",
+          "modelo": "haiku",
+          "esfuerzo": "low",
+          "multiagente": false,
+          "verificacion": "Un clon fresco del repositorio (git clone de este mismo repo a un directorio temporal) ejecuta node scripts/doctor.js y sale 0, sin copiar nada del checkout de trabajo ni variables de entorno adicionales.",
+          "verificacion_comando": "bash -c 'set -e; d=$(mktemp -d); git clone --quiet \"$(git rev-parse --show-toplevel)\" \"$d\"; cd \"$d\"; node scripts/doctor.js'",
+          "horas_maquina": 0.5,
+          "estado": "pendiente",
+          "por_que_este_modelo": "Es correr un comando y leer el código de salida -- no hay criterio que diseñar.",
+          "archivos": "Ninguno esperado -- es una comprobación. Si falla, el hallazgo se convierte en su propio ítem (típicamente un requisito no documentado en Instalación).",
+          "rollback": "No aplica -- es una comprobación, no cambia comportamiento del plugin."
+        }
+      ]
+    }
+  ]
+}

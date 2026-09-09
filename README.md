@@ -253,7 +253,7 @@ está funcionando.
 /credential-read-guard:doctor
 ```
 
-Corre el mismo `hooks/guard.js` contra los seis fixtures incluidos
+Corre el mismo `hooks/guard.js` contra los 7 fixtures incluidos
 (secretos ficticios, valor `estoNoSePinta`) y confirma que cada uno se
 comporta como se documenta: los primeros cuatro con `deny` (tres con
 estructura mixta, redactados — incluido `demo-crlf.env`, con finales de
@@ -317,7 +317,7 @@ script de Node corriente que se puede invocar en tu propia terminal, sin
 abrir Claude Code:
 
 ```bash
-node scripts/doctor.js                       # los 4 fixtures de examples/
+node scripts/doctor.js                       # los 7 fixtures de examples/
 node scripts/doctor.js ruta/a/tu/archivo.json # un archivo propio
 ```
 
@@ -357,7 +357,7 @@ actualización sin que nadie lo vuelva a tocar. Desde cualquier proyecto,
 en cualquier terminal:
 
 ```bash
-credguard                 # los 4 fixtures de examples/
+credguard                 # los 7 fixtures de examples/
 credguard ruta/archivo    # un archivo propio, sin exponer su contenido
 credguard ignore ...      # gestiona .credentialguardignore -- "credguard ignore" para su ayuda
 ```
