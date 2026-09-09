@@ -3,6 +3,28 @@
 Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado: [SemVer](https://semver.org/lang/es/).
 
+## [1.2.2] — 2026-09-08
+
+### Corregido
+
+- **El hook nunca cargaba al instalar vía marketplace** —
+  `claude plugin list --json` reportaba el plugin `enabled: true` pero con
+  el error `Hook load failed: Duplicate hooks file detected`, y el
+  `PreToolUse` de `hooks/guard.js` simplemente no se registraba: cualquier
+  lectura de un archivo de credenciales pasaba de largo sin ningún aviso,
+  ni siquiera un `deny`. Causa: `.claude-plugin/plugin.json` declaraba
+  explícitamente `"hooks": "./hooks/hooks.json"`, la misma ruta que Claude
+  Code ya carga automáticamente por convención — declararla de nuevo en el
+  manifiesto se interpreta como una segunda fuente de hooks apuntando al
+  mismo archivo, y el loader rechaza el duplicado en vez de deduplicarlo en
+  silencio. Encontrado al migrar una instalación desde
+  `~/.claude/skills/credential-read-guard` (congelada en 1.0.0 desde antes
+  de que existiera el marketplace `dweno-forge`) hacia
+  `credential-read-guard@dweno-forge`: el plugin nuevo quedaba instalado y
+  "habilitado", pero protegiendo cero archivos. Ahora `plugin.json` no
+  declara `hooks` — el archivo estándar en `hooks/hooks.json` se sigue
+  cargando igual, solo que sin el conflicto.
+
 ## [1.2.1] — 2026-09-07
 
 ### Añadido
