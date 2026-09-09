@@ -152,6 +152,102 @@ function isSecretHuntPattern(pattern) {
 // SENSITIVE_FILE_RE ya marco como credenciales.
 const IP_PORT_RE = /\b(?:\d{1,3}\.){3}\d{1,3}(?:[:,]\d{1,5})?\b/g;
 
+// --- Claves genericas (Auth/Credential) con filtro de entropia -------------
+//
+// secretKeyRe (mas abajo) exige que el nombre de la clave diga explicitamente
+// que hay un secreto ("password", "token", "ApiKey"). Una convencion muy comun
+// se escapa de ahi: "StripeAuth", "ExternalServiceCredential" -- ni matchean
+// las palabras de secretKeyRe ni terminan en "Key", asi que su valor pasaba
+// visible en additionalContext.
+//
+// Agregar "auth|credential" a secretKeyRe a secas seria repetir el error que
+// hace ruidoso a TruffleHog clasico: "AuthMode: basic", "CredentialType: none"
+// o una "Authority" de OIDC se redactarian tambien, y un archivo lleno de
+// «REDACTED» deja de ser util como contexto. Por eso la clave generica NO
+// decide sola: solo habilita una segunda comprobacion sobre el VALOR.
+const GENERIC_SECRET_KEY_RE = /auth|credential/i;
+
+// Via 1 -- hexadecimal estricto. Va ANTES de Shannon y sin pasar por el, a
+// proposito: el alfabeto hex tiene 16 simbolos, asi que su entropia maxima
+// teorica es log2(16) = 4.0 bits/char. Medido sobre casos reales, un secreto
+// de 32 hex da H=4.00 y un SHA-256 de 64 hex da H=3.67 -- por debajo del
+// umbral de 4.2. Un unico umbral de Shannon sin normalizar dejaria pasar
+// justamente los secretos puramente hexadecimales (llaves de 16/32 bytes en
+// hex, HMAC, tokens hex), que son de los mas comunes. Aqui el criterio es
+// longitud+densidad: 32 o mas caracteres, TODOS hex, nada mas.
+//
+// Residual aceptado a proposito: un hash de git (SHA-1, 40 hex) o un digest
+// bajo una clave que contenga "auth"/"credential" -- p.ej.
+// "AuthModuleCommit": "e3b0c442..." -- se redacta aunque no sea un secreto.
+// No se agrega una lista negra de nombres ("commit", "sha", "hash") para
+// esquivarlo: por ser substring colisiona con nombres legitimos ("sha" dentro
+// de "Shared") y taparia hashes que SI son material sensible. El costo real
+// es bajo porque esta redaccion solo corre sobre archivos que
+// SENSITIVE_FILE_RE ya bloqueo -- una linea de metadata tachada dentro de un
+// archivo que de todas formas se deniega -- mientras que relajar esta via
+// dejaria pasar llaves hexadecimales de 16/32 bytes, que es el fallo que se
+// esta cerrando.
+const HEX_SECRET_RE = /^[0-9a-fA-F]{32,}$/;
+
+// Descarte para la via 2: un valor que es una URI. Con 4.2 bits/char, una URL
+// de autenticacion realista como
+// "https://login.example.com/oauth2/v2.0/authorize" da H=4.31 y una Authority
+// de Entra ID con GUID de tenant da H=4.73 -- ambas cruzarian el umbral y son
+// falsos positivos claros (una URL de endpoint no es la credencial). No abre
+// hueco: una URI del tipo "esquema://usuario:contrasena@host" sigue redactada
+// por embeddedSecretRe, y un host por IP por la segunda pasada de IP_PORT_RE,
+// ninguno de los dos depende de este camino.
+const URI_VALUE_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+// Por debajo de 20 caracteres el umbral es practicamente inalcanzable (la
+// entropia de Shannon de un string de largo n no puede pasar de log2(n), y
+// log2(19) = 4.25), y en strings cortos el resultado lo domina el propio
+// largo en vez de la composicion del valor. Se corta explicito para que la
+// intencion quede escrita y no dependa de esa coincidencia aritmetica.
+const ENTROPY_MIN_LENGTH = 20;
+
+// 4.2 bits/char, no 4.0: el maximo teorico de un alfabeto mixto (base64 y
+// similares, ~64 simbolos) es 6.0, y los secretos medidos caen entre 4.36
+// (un JWT header) y 5.21 (una clave de Azure), mientras que los falsos
+// positivos clasicos se quedan abajo -- GUID 3.39, ruta de Windows 4.13,
+// semver 4.16, email 4.05. Ajustar este numero es cambiar una constante, no
+// rehacer la funcion.
+const ENTROPY_THRESHOLD = 4.2;
+
+function shannonEntropy(value) {
+  const freq = Object.create(null);
+  for (const ch of value) freq[ch] = (freq[ch] || 0) + 1;
+  let h = 0;
+  for (const ch in freq) {
+    const p = freq[ch] / value.length;
+    h -= p * Math.log2(p);
+  }
+  return h;
+}
+
+// El string que capturan las regex de JSON/YAML suele traer las comillas
+// envolventes y/o espacio inicial. Esos caracteres alteran las frecuencias
+// p_i y sesgan la entropia calculada -- y, peor, rompen el ancla de
+// HEX_SECRET_RE: '"9f8e...a0"' con comillas NO matchea /^[0-9a-fA-F]{32,}$/ y
+// el secreto pasaria visible. Se limpia antes de medir cualquier cosa.
+function cleanValue(rawValue) {
+  return String(rawValue == null ? "" : rawValue)
+    .trim()
+    .replace(/^["']|["']$/g, "");
+}
+
+// True si el valor parece la credencial en si, por una de las dos vias.
+// Espacios en blanco descartan: una frase ("usar el flujo de client
+// credentials") es prosa de configuracion, no un token opaco.
+function looksLikeSecretValue(rawValue) {
+  const value = cleanValue(rawValue);
+  if (HEX_SECRET_RE.test(value)) return true;
+  if (/\s/.test(value)) return false;
+  if (URI_VALUE_RE.test(value)) return false;
+  if (value.length < ENTROPY_MIN_LENGTH) return false;
+  return shannonEntropy(value) >= ENTROPY_THRESHOLD;
+}
+
 // Redacta valores de archivos con estructura mixta (config + secretos).
 // Devuelve null si el archivo no existe, no se puede leer, o su formato es
 // opaco (todo el contenido es el secreto -- ver OPAQUE_SECRET_RE).
@@ -191,6 +287,18 @@ function redactFile(filePath) {
   // matchea ni por nombre de clave ni por "password=" literal.
   const embeddedSecretRe = /\b(password|pwd)\s*=|:\/\/[^/\s:]+:[^/\s@]+@/i;
   const isSecretKey = (key) => secretKeyRe.test(key) || pascalKeySuffixRe.test(key);
+  // Decision completa por par clave/valor. Dos niveles, no uno:
+  //   - clave explicita (isSecretKey): se redacta sin mirar el valor, como
+  //     siempre -- "Password: " vacio o "ApiKey: 1234" se redactan igual.
+  //   - clave generica (Auth/Credential): se redacta SOLO si el valor pasa
+  //     looksLikeSecretValue(). Aqui el nombre de la clave es la puerta y la
+  //     entropia el filtro, nunca al reves: por eso el gate de la clave puede
+  //     ser laxo (un substring "auth" atrapa tambien "Author"/"Authority")
+  //     sin que eso se traduzca en redacciones de mas.
+  const shouldRedact = (key, value) =>
+    isSecretKey(key) ||
+    embeddedSecretRe.test(value) ||
+    (GENERIC_SECRET_KEY_RE.test(key) && looksLikeSecretValue(value));
 
   let redacted = null;
 
@@ -198,7 +306,7 @@ function redactFile(filePath) {
     redacted = content.replace(
       /("(?:[^"\\]|\\.)*")(\s*:\s*)("(?:[^"\\]|\\.)*")/g,
       (match, key, sep, value) => {
-        if (isSecretKey(key) || embeddedSecretRe.test(value)) {
+        if (shouldRedact(key, value)) {
           return `${key}${sep}"${REDACTED}"`;
         }
         return match;
@@ -210,8 +318,8 @@ function redactFile(filePath) {
       .map((line) => {
         const m = line.match(/^([^=:#\s][^=:]*)([=:])(.*)\r?$/);
         if (!m) return line;
-        const [, key, sep] = m;
-        return isSecretKey(key) || /\.env(\..+)?$/i.test(filePath)
+        const [, key, sep, value] = m;
+        return shouldRedact(key, value) || /\.env(\..+)?$/i.test(filePath)
           ? `${key}${sep}${REDACTED}`
           : line;
       })
@@ -243,7 +351,7 @@ function redactFile(filePath) {
         const isValueLine = /^value$/i.test(trimmedKey);
         const effectiveKey = isValueLine && pendingKey ? pendingKey : trimmedKey;
         if (isValueLine) pendingKey = null;
-        if (!rawValue.trim() || !(isSecretKey(effectiveKey) || embeddedSecretRe.test(rawValue))) {
+        if (!rawValue.trim() || !shouldRedact(effectiveKey, rawValue)) {
           return line;
         }
         const quoted = rawValue.match(/^(["'])([\s\S]*)\1$/);

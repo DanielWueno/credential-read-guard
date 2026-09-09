@@ -54,6 +54,48 @@ const BUILTIN_CASES = [
     expect: "allow",
     mustRedact: false,
   },
+  // Claves con sufijo generico Auth/Credential: el nombre no dice que haya un
+  // secreto (no matchea secretKeyRe ni termina en "Key"), asi que la decision
+  // la toma el valor. Los dos "mustNotContain" son las dos vias -- hex
+  // estricto (H=4.00, POR DEBAJO del umbral de Shannon: si el hex no tuviera
+  // su propio camino, este valor pasaria visible) y token alfanumerico
+  // (H=5.00, via entropia). Los "mustContain" son el contra-experimento: la
+  // misma FORMA de clave con valores que no son credenciales (basic, none, una
+  // frase, una URL de endpoint, un GUID de tenant) tiene que seguir visible,
+  // porque si no, ampliar la lista de palabras clave habria cambiado un falso
+  // negativo por un archivo entero redactado.
+  {
+    file: "examples/appsettings.generic-keys.demo.json",
+    expect: "deny",
+    mustRedact: true,
+    mustNotContain: ["9f8e7d6c5b4a39281706f5e4d3c2b1a0", "Xq7Rm2Zt9Kv4Lb8Nw3Pj6Hy1Fd5Gs0Ac"],
+    mustContain: [
+      '"AuthMode": "basic"',
+      '"CredentialType": "none"',
+      "rotacion manual cada 90 dias",
+      "login.example.com/oauth2",
+      "550e8400-e29b-41d4-a716-446655440000",
+      "este valor debe seguir visible sin cambios",
+    ],
+  },
+  // El mismo criterio en la rama YAML de redactFile(), y por el camino de
+  // yamlEmbeddedSecretRedaction(): este nombre de archivo no matchea ningun
+  // patron de SENSITIVE_FILE_RE, asi que el deny solo puede venir de que la
+  // redaccion encontro algo -- es decir, prueba que la deteccion por entropia
+  // tambien es lo que dispara el bloqueo, no solo lo que tacha valores.
+  {
+    file: "examples/generic-keys.demo.yaml",
+    expect: "deny",
+    mustRedact: true,
+    mustNotContain: ["Tw8Vb3Nq6Zx1Ly4Mk7Rj0Ph5Cd2Fs9Ga", "9f8e7d6c5b4a39281706f5e4d3c2b1a0"],
+    mustContain: [
+      "authMode: basic",
+      "credentialType: none",
+      "login.example.com/oauth2",
+      "550e8400-e29b-41d4-a716-446655440000",
+      "kind: ConfigMap",
+    ],
+  },
   {
     file: "examples/k8s-deployment.demo.yaml",
     expect: "deny",

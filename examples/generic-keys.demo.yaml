@@ -1,0 +1,17 @@
+# Fixture de demostracion. El nombre del archivo NO matchea ningun patron de
+# SENSITIVE_FILE_RE (no es "secrets.yaml"): el bloqueo tiene que salir de que
+# redactFile() encuentre algo que redactar -- aqui, una clave con sufijo
+# generico Auth/Credential cuyo valor pasa el filtro de entropia. Los valores
+# son ficticios.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-generic-keys
+data:
+  serviceAuth: Tw8Vb3Nq6Zx1Ly4Mk7Rj0Ph5Cd2Fs9Ga
+  legacyCredential: 9f8e7d6c5b4a39281706f5e4d3c2b1a0
+  authMode: basic
+  credentialType: none
+  authEndpoint: https://login.example.com/oauth2/v2.0/authorize
+  authTenantId: 550e8400-e29b-41d4-a716-446655440000
+  infoNoSensible: este valor debe seguir visible sin cambios
