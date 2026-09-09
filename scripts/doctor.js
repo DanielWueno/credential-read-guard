@@ -73,12 +73,13 @@ function runGuardWithInput(toolName, toolInput) {
     return { decision: "error", redacted: null, raw: stdout };
   }
   const out = parsed.hookSpecificOutput || {};
-  const redacted = out.additionalContext
-    ? out.additionalContext.replace(
-        /^Contenido con valores sensibles redactados por credential-read-guard:\n\n/,
-        ""
-      )
-    : null;
+  // additionalContext es un parrafo de instrucciones para Claude seguido de
+  // "\n\n" y despues el contenido redactado -- se corta ahi en vez de fijar
+  // el texto exacto del parrafo, para no tener que mantener este regex en
+  // sincronia con la redaccion de guard.js.
+  const separatorIdx = out.additionalContext ? out.additionalContext.indexOf("\n\n") : -1;
+  const redacted =
+    separatorIdx === -1 ? out.additionalContext || null : out.additionalContext.slice(separatorIdx + 2);
   return { decision: out.permissionDecision || "allow", redacted };
 }
 
