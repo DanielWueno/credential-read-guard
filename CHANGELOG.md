@@ -3,6 +3,29 @@
 Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado: [SemVer](https://semver.org/lang/es/).
 
+## [1.2.3] — 2026-09-09
+
+### Corregido
+
+- **Rutas entre comillas y `Grep` sin `glob` se colaban sin bloqueo.** Los
+  patrones que reconocen un archivo de credenciales terminan en `$` (fin de
+  cadena) — `appsettings(\..+)?\.json$`, por ejemplo. `Bash`/`PowerShell`
+  probaban ese patrón contra el comando completo, y `Grep` contra `path` y
+  `glob` concatenados con un espacio. Cualquier carácter después de la
+  extensión rompe ese `$`: una comilla de cierre (`cat "appsettings.json"` —
+  la forma normal de escribir el comando, no un caso raro) o, en `Grep`, el
+  espacio que queda cuando `glob` viene vacío. El resultado: `Read` seguía
+  bloqueado, pero `Bash`/`PowerShell`/`Grep` sobre el mismo archivo pasaban
+  de largo en silencio. Encontrado al reproducir una sesión real de
+  `credential-read-guard@dweno-forge` 1.2.2 donde `appsettings.json` se
+  imprimió sin redactar pese a que `/credential-read-guard:doctor` daba
+  correcto — el doctor solo probaba `Read`, nunca los otros tres. Ahora
+  `Bash`/`PowerShell` también evalúan la ruta ya extraída (sin comillas) y
+  no solo el comando crudo, y `Grep` evalúa `path`/`glob` por separado. El
+  doctor agrega una segunda batería que ejercita `Bash`/`PowerShell`/`Grep`
+  sobre los mismos fixtures, para que una regresión así no vuelva a pasar
+  desapercibida.
+
 ## [1.2.2] — 2026-09-08
 
 ### Corregido
