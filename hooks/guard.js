@@ -348,13 +348,25 @@ function allow() {
     if (READ_COMMAND_RE.test(cmd)) {
       // Redaccion solo cuando el comando apunta a un unico archivo identificable
       // sin pipes/redirecciones -- en cualquier otro caso, deny sin contenido.
-      const single = cmd.match(/^\s*\S+\s+"?([^"|>&;]+?)"?\s*$/);
-      const target = single ? single[1].trim() : null;
-      // isSensitiveFile(cmd) por si solo casi nunca matchea: el comando real
-      // trae el binario y flags antes de la ruta, y cualquier comilla de
-      // cierre despues de la extension (el caso comun -- "cat \"x.json\"")
-      // ya rompe el "$" de fin de patron. "target" (ruta ya sin comillas)
-      // es el chequeo que de verdad cubre el caso comun.
+      // El target no es necesariamente el primer ni el ultimo argumento: un
+      // flag puede ir antes de la ruta (Get-Content -Path "x.json") o
+      // despues (Get-Content "x.json" -Raw, muy comun) -- por eso se
+      // tokeniza el comando entero (respetando comillas) y se busca CUALQUIER
+      // argumento que matchee un patron de archivo de credenciales, en vez
+      // de asumir una posicion fija. Antes, "target" solo reconocia
+      // "binario ruta" a secas: cualquier flag de por medio, con o sin
+      // comillas en la ruta, dejaba "target" en null Y rompia el "$" de fin
+      // de patron de isSensitiveFile(cmd) (el string completo ya no termina
+      // en la extension), dejando pasar el comando sin bloqueo alguno.
+      const hasChaining = /[|;&<>]/.test(cmd);
+      let target = null;
+      if (!hasChaining) {
+        const args = [];
+        const argRe = /"([^"]*)"|'([^']*)'|(\S+)/g;
+        let m;
+        while ((m = argRe.exec(cmd))) args.push(m[1] ?? m[2] ?? m[3]);
+        target = args.slice(1).find((a) => isSensitiveFile(a)) || null;
+      }
       if (isSensitiveFile(cmd) || (target && isSensitiveFile(target))) {
         return deny(`comando lee un archivo de credenciales: ${cmd}`, target ? redactFile(target) : null);
       }

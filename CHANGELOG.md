@@ -30,6 +30,25 @@ Versionado: [SemVer](https://semver.org/lang/es/).
   `Password=` dentro de un connection string. Fixture nuevo:
   `examples/appsettings.gaps.demo.json` (valores ficticios, no los del
   reporte original).
+- **`Bash`/`PowerShell` dejaban pasar el comando entero cuando había un flag
+  junto a la ruta.** La extracción de `target` solo reconocía "binario
+  ruta" a secas (dos tokens). Un flag antes de una ruta entre comillas
+  (`Get-Content -Path "x.json"`) o después de la ruta (`Get-Content
+  "x.json" -Raw`, un uso muy común) no solo dejaba `target` en `null` — el
+  comando completo termina en el flag, no en la extensión del archivo, así
+  que el fallback `isSensitiveFile(cmd)` sobre el string entero también
+  dejaba de matchear por el mismo problema del `$` de fin de patrón. El
+  resultado no era "deny sin redacción" sino ningún bloqueo en absoluto:
+  el contenido real pasaba completo. Confirmado en vivo contra
+  `hooks/guard.js` con ambas combinaciones antes del fix. Ahora el
+  comando se tokeniza completo (respetando comillas) y se busca cualquier
+  argumento — en cualquier posición relativa al binario y los demás flags —
+  que matchee un patrón de archivo de credenciales, en vez de asumir que
+  la ruta es el primer o el último token. Comandos con pipe/redirección/
+  `&&`/`;` siguen sin intentar identificar un target único (mismo criterio
+  que ya existía), así que en ese caso el `deny` sigue sin contenido, no
+  sin bloqueo. `scripts/doctor.js` agrega tres casos nuevos cubriendo
+  ambas posiciones de flag en PowerShell y una en Bash.
 
 ## [1.3.1] — 2026-09-09
 
