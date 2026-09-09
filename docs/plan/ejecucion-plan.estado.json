@@ -185,7 +185,9 @@
           "verificacion": "El tag `credential-read-guard--v1.3.2` existe en git, apunta al commit actual (main), y una release de GitHub asociada al tag está publicada con el CHANGELOG de 1.3.2 como descripción.",
           "verificacion_comando": "git tag -l | grep -q 'credential-read-guard--v1.3.2' && [ \"$(git rev-list -n 1 credential-read-guard--v1.3.2)\" = \"$(git rev-parse HEAD)\" ]",
           "horas_maquina": 0.25,
-          "estado": "pendiente",
+          "estado": "hecho",
+          "fecha_inicio": "2026-09-09",
+          "resultado": "Tag `credential-read-guard--v1.3.2` creado y apuntando a HEAD (commit a3e27b3). Release publicada en GitHub en https://github.com/DanielWueno/credential-read-guard/releases/tag/credential-read-guard--v1.3.2 con las notas de cambio de v1.3.2 del CHANGELOG. Verificación pasó exitosamente: tag existe y apunta a HEAD.",
           "por_que_este_modelo": "Es crear un tag y una release en GitHub -- tarea mecánica sin criterio de diseño.",
           "archivos": "Ninguno -- operación de git + GitHub.",
           "rollback": "git tag -d credential-read-guard--v1.3.2 y borrar la release de GitHub; sin cambios en código."
