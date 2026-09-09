@@ -3,6 +3,27 @@
 Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado: [SemVer](https://semver.org/lang/es/).
 
+## [1.2.4] — 2026-09-09
+
+### Corregido
+
+- **El marcador de redacción se perdía al re-narrar el contenido en el chat.**
+  `hooks/guard.js` ya devolvía el contenido bloqueado con el valor sensible
+  reemplazado por `«REDACTED-BY-credential-read-guard»` — descriptivo a
+  propósito, para que se lea como un control de seguridad activo y no como un
+  campo vacío cualquiera. El problema aparecía un paso después: al mostrarle
+  ese contenido al usuario, el modelo a veces lo retipeaba en vez de pegarlo
+  tal cual, y en esa reescritura acortaba el marcador a un `«REDACTED»`
+  genérico — perdiendo justo la parte que lo distinguía de un placeholder
+  cualquiera. `additionalContext` ahora antepone una instrucción explícita
+  (reproducir el contenido bloqueado tal cual, sin parafrasear el marcador)
+  antes del contenido redactado, para que esa instrucción viaje con el hook
+  en cualquier máquina o proyecto, en vez de depender de que el modelo lo
+  recuerde por su cuenta. `scripts/doctor.js` ajustó su extracción de
+  `additionalContext` para cortar en el primer `"\n\n"` en vez de fijar el
+  texto exacto del párrafo de instrucciones, así no queda atado a su
+  redacción.
+
 ## [1.2.3] — 2026-09-09
 
 ### Corregido

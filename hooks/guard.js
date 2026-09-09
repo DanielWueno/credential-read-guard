@@ -259,7 +259,10 @@ function deny(reason, redactedContent) {
   };
   if (redactedContent != null) {
     output.hookSpecificOutput.additionalContext =
-      `Contenido con valores sensibles redactados por credential-read-guard:\n\n${redactedContent}`;
+      `Contenido con valores sensibles redactados por credential-read-guard. Al mostrarselo al ` +
+      `usuario, reproducilo tal cual (incluido el marcador ${REDACTED}) -- no lo parafrasees ni lo ` +
+      `acortes a un placeholder generico como "REDACTED": ese texto es lo que hace visible que el ` +
+      `bloqueo es un control de seguridad activo, no un valor vacio cualquiera.\n\n${redactedContent}`;
   }
   process.stdout.write(JSON.stringify(output));
   process.exit(0);
