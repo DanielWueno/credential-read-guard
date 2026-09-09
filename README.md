@@ -28,6 +28,11 @@ siguiente:
 | `Grep` | `path`/`glob` contra los mismos patrones, y `pattern` contra palabras clave asociadas a extracción de secretos (`password=`, `connectionstring`, `api_key`, etc.), independientemente del archivo objetivo |
 | `Bash` / `PowerShell` | el texto completo del comando, buscando combinaciones de comandos de lectura de contenido (`cat`, `type`, `Get-Content`, `head`, `tail`, `strings`, `base64`, etc.) contra un archivo de credenciales o, si el comando apunta a un único `*.yaml`/`*.yml`, contra su contenido; o `grep`/`findstr`/`Select-String` junto con palabras clave de extracción de secretos |
 
+Además, un hook `SessionStart` (`hooks/selfcheck.js`) corre este mismo
+`guard.js` contra un fixture propio al iniciar cada sesión y avisa si algo
+no se comporta como se espera — ver [Verificación](#verificación) para el
+detalle de qué prueba cada mecanismo de chequeo.
+
 Un `deny` bloquea unicamente esa llamada puntual a la herramienta -- no
 interrumpe la sesion ni descarta el trabajo previo. Cuando el archivo
 detectado tiene estructura mixta (configuracion junto con secretos, como
@@ -123,7 +128,9 @@ Los patrones integrados en `hooks/guard.js` cubren convenciones comunes,
 pero cada proyecto puede tener las suyas propias. Un archivo
 `.credentialguardignore` en la raíz del proyecto — con el mismo modelo que
 un `.gitignore` — permite agregar o excluir patrones sin tocar el código
-del plugin:
+del plugin. Es puramente aditivo/opcional, no un interruptor: la
+protección de los patrones integrados sigue activa exista o no este
+archivo, y crearlo no es un requisito para que el plugin funcione.
 
 - Una línea = un patrón regex adicional (insensible a mayúsculas) que se
   suma a los patrones de archivo integrados.
@@ -134,9 +141,26 @@ del plugin:
   `!keyword:` la excluye.
 - Líneas vacías o que empiezan con `#` se ignoran.
 
+No hace falta editar el archivo a mano ni recordar esta sintaxis:
+
+```
+/credential-read-guard:ignore add "mi_configuracion_secreta\.ini$"
+/credential-read-guard:ignore add keyword:ReymaMessageQueueOptions
+/credential-read-guard:ignore remove "appsettings\.Test\.json$"
+/credential-read-guard:ignore list
+```
+
+`/credential-read-guard:ignore` sin argumentos muestra su propia ayuda con
+estos mismos ejemplos. Con el atajo `credguard` instalado (ver
+[Atajo `credguard`](#atajo-credguard)), lo mismo funciona en terminal sin
+pasar por una sesión de Claude Code: `credguard ignore add ...`,
+`credguard ignore list`, etc. Ambos corren el mismo
+[`scripts/ignore.js`](scripts/ignore.js) — el formato del archivo no
+cambia, solo evita tener que ir a buscarlo en la documentación.
+
 Ver [`examples/.credentialguardignore.example`](examples/.credentialguardignore.example)
-para un ejemplo completo. Si el archivo no existe, el plugin funciona
-igual, solo con los patrones integrados.
+para un ejemplo completo del formato en crudo. Si el archivo no existe, el
+plugin funciona igual, solo con los patrones integrados.
 
 ## Requisitos
 
@@ -175,10 +199,30 @@ curso.
 
 ## Verificación
 
-No hay razón para confiar en esta descripción sin comprobarlo. Con la
-sesión reiniciada y el plugin activo en el proyecto, el comando incluido
-lo hace por ti — no hace falta saber dónde quedó instalado el plugin ni ir
-a buscar el directorio `examples/` a mano:
+No hay razón para confiar en esta descripción sin comprobarlo — pero
+conviene ser preciso sobre qué comprueba cada mecanismo, porque no todos
+prueban lo mismo.
+
+### Autochequeo automático al iniciar sesión
+
+Un hook `SessionStart` (`hooks/selfcheck.js`) corre solo, en cada sesión,
+contra un fixture propio del plugin (`examples/demo.env`) — sin que nadie
+tenga que acordarse de correr `/credential-read-guard:doctor` a mano. Si
+todo está bien, no dice nada: es silencioso a propósito, para no meter
+ruido en cada arranque. Si algo falla — `guard.js` no bloqueó el fixture,
+lo bloqueó pero sin redactar, `node` no está disponible en el entorno
+donde Claude Code corre los hooks, etc. — inyecta una advertencia visible
+al inicio de la conversación para que no pase desapercibido.
+
+Este chequeo ejercita exactamente el mismo mecanismo que un `PreToolUse`
+real (`node hooks/guard.js`, alimentado por stdin), así que cualquier
+falla de entorno que impediría el bloqueo real también lo hace fallar
+aquí. Es la respuesta a que no es viable confirmar manualmente, proyecto
+por proyecto, que el hook sigue funcionando: en vez de depender de que
+alguien se acuerde de probarlo, el propio plugin avisa cuando algo no
+está funcionando.
+
+### `/credential-read-guard:doctor` — valida la lógica, no el enganche
 
 ```
 /credential-read-guard:doctor
@@ -207,14 +251,38 @@ de agregar a tu `appsettings.json` real sí queda cubierto:
 /credential-read-guard:doctor ruta/a/tu/appsettings.json
 ```
 
-Esa verificación corre `hooks/guard.js` directo por Node, no un `Read` del
-archivo — tu contenido real nunca llega a mí, solo el veredicto
-(bloqueado/permitido) y, si aplica, la versión ya redactada.
+**Importante:** con o sin argumentos, `doctor` invoca `hooks/guard.js`
+directo por Node (`spawnSync`, alimentado a mano con el mismo payload que
+mandaría un `PreToolUse` real) — nunca pasa por el mecanismo de hooks de
+Claude Code. Eso es justamente lo que permite que tu contenido real nunca
+llegue al modelo, solo el veredicto — pero también significa que `doctor`
+prueba que la lógica de `guard.js` es correcta (los patrones matchean, la
+redacción funciona), no que el `PreToolUse` esté realmente enganchado a
+*esta* sesión. Puede pasar los diez casos sin un solo fallo y aun así el
+hook real no estar interceptando nada, si por ejemplo el proceso que
+Claude Code usa para correr hooks en este entorno no encuentra `node` en
+el PATH, o el plugin quedó instalado después de que la sesión ya había
+arrancado. El autochequeo de arriba cubre parte de ese hueco porque corre
+en cada sesión sin depender de que alguien lo invoque, pero para la
+garantía completa hace falta un `Read` de verdad (ver siguiente sección).
 
-Si al correr `/credential-read-guard:doctor` sin argumentos algún fixture
-sale distinto de lo esperado, o el valor `estoNoSePinta` aparece sin
-redactar, el hook no está activo (revisar que la sesión se haya reiniciado
-después de instalar).
+### Confirmar el enganche real, en vivo, sin arriesgar nada
+
+La única prueba de que el `PreToolUse` está interceptando llamadas reales
+en esta sesión es provocar una — y para eso no hace falta arriesgar
+ningún archivo propio: pídele a Claude que lea uno de los fixtures
+incluidos, por ejemplo
+
+```
+Muéstrame el contenido de examples/demo.env
+```
+
+Los fixtures traen secretos ficticios (valor `estoNoSePinta`), así que no
+hay nada real que exponer. Si el `Read` se bloquea, el enganche funciona
+en esta sesión; si el contenido se muestra tal cual, algo en el registro
+del hook está roto ahí (sesión no reiniciada después de instalar, `node`
+fuera del PATH que usa Claude Code, etc.) — independientemente de lo que
+haya dicho `doctor`.
 
 ### Sin pasar por Claude Code en absoluto
 
@@ -239,6 +307,13 @@ sería bloqueada; el campo `additionalContext`, cuando está presente,
 contiene la versión redactada. Sin salida (exit 0) indica que sería
 permitida.
 
+En Windows PowerShell, `echo '...' | node hooks/guard.js` (o el
+equivalente con comillas dobles) antepone un BOM UTF-8 al texto que
+canaliza hacia el proceso hijo — `hooks/guard.js` lo descarta antes de
+parsear el JSON, así que este comando funciona igual ahí. Si alguna vez
+ves que devuelve exit 0 sin salida para un fixture que debería bloquearse,
+es señal de que algo distinto está fallando, no de este caso puntual.
+
 ### Atajo `credguard`
 
 `node scripts/doctor.js` funciona, pero exige encontrar a mano la ruta
@@ -259,6 +334,7 @@ en cualquier terminal:
 ```bash
 credguard                 # los 4 fixtures de examples/
 credguard ruta/archivo    # un archivo propio, sin exponer su contenido
+credguard ignore ...      # gestiona .credentialguardignore -- "credguard ignore" para su ayuda
 ```
 
 También puede instalarse sin pasar por Claude Code:
