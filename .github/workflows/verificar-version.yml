@@ -1,0 +1,22 @@
+name: Verificar version
+
+# Corre en todo pull request y en cada push a main -- valida en el momento
+# del PR, no solo al hacer el release, que .claude-plugin/plugin.json y la
+# version mas reciente de CHANGELOG.md coincidan (scripts/verificar-version.js).
+# Ver plugin-conventions ("Bump de version"): esta verificacion existe
+# porque antes era un paso manual documentado, no aplicado, y se olvido.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verificar-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node scripts/verificar-version.js
