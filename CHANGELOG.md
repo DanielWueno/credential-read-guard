@@ -3,6 +3,34 @@
 Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado: [SemVer](https://semver.org/lang/es/).
 
+## [Unreleased]
+
+### Añadido
+
+- **Prefijo `redact-key:` en `.credentialguardignore`.** Motivado por un
+  caso real: agregar `keyword: Authority` para que ese campo de un
+  `appsettings.json` (una URL de `Authority` de OIDC) quedara oculto al
+  leer el archivo no tuvo ningún efecto — `keyword:` solo alimenta
+  `SECRET_HUNT_RE`, consultado únicamente al bloquear una *búsqueda* de
+  `Grep`/`grep` por shell, nunca la redacción de `Read`. No existía ningún
+  prefijo que conectara con `isSecretKey()`/`shouldRedact()` dentro de
+  `redactFile()`, que es lo que de verdad decide qué valor se tacha dentro
+  de un archivo que igual se sigue mostrando. `redact-key:` (y su inverso
+  `!redact-key:`, para excluir una clave que las reglas integradas
+  redactarían igual) cierra ese hueco sin tocar `SECRET_HUNT_RE` ni
+  `SENSITIVE_FILE_RE` — no bloquea ninguna búsqueda ni el archivo entero,
+  solo el valor de la clave puntual, y sin pasar por el filtro de
+  entropía/URI que protege a `GENERIC_SECRET_KEY_RE` de sobre-redactar
+  (por eso `Authority` con una URL no se tachaba antes: es el
+  comportamiento a propósito para ese caso genérico, no un bug).
+  `scripts/ignore.js` soporta el prefijo nuevo en `add`/`remove`/`list`
+  (reemplaza el booleano `isKeyword` por un `kind` de tres valores).
+  `scripts/doctor.js` agrega un tercer grupo de casos
+  (`examples/redact-key-demo/`, con su propio `.credentialguardignore`)
+  para verificar la mecánica. README, `commands/ignore.md` y
+  `examples/.credentialguardignore.example` documentan la diferencia
+  entre los tres prefijos y por qué no son intercambiables.
+
 ## [1.3.2] — 2026-09-09
 
 ### Corregido

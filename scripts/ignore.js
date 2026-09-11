@@ -30,24 +30,29 @@ function writeLines(lines) {
 
 // Misma tolerancia de parseo que loadCustomPatterns() en hooks/guard.js:
 // trim, "#" y vacias se ignoran, "!" al inicio es negacion, "keyword:" al
-// inicio marca palabra clave en vez de patron de archivo.
+// inicio marca palabra clave de busqueda (Grep/shell) en vez de patron de
+// archivo, "redact-key:" marca una clave cuyo valor se redacta dentro de un
+// archivo ya mostrado (no bloquea archivo ni busqueda). "kind" reemplaza al
+// viejo booleano "isKeyword" para dejar lugar a un tercer tipo sin volver
+// binario lo que ya no lo es.
 function parseLine(rawLine) {
   const line = rawLine.trim();
   if (!line || line.startsWith("#")) return null;
   const negated = line.startsWith("!");
   const body = negated ? line.slice(1).trim() : line;
-  const isKeyword = /^keyword:/i.test(body);
-  const value = (isKeyword ? body.replace(/^keyword:/i, "") : body).trim();
+  const kind = /^redact-key:/i.test(body) ? "redact-key" : /^keyword:/i.test(body) ? "keyword" : "file";
+  const value = (kind === "file" ? body : body.replace(/^(redact-key|keyword):/i, "")).trim();
   if (!value) return null;
-  return { negated, isKeyword, value };
+  return { negated, kind, value };
 }
 
-function formatLine({ negated, isKeyword, value }) {
-  return `${negated ? "!" : ""}${isKeyword ? "keyword: " : ""}${value}`;
+function formatLine({ negated, kind, value }) {
+  const prefix = kind === "file" ? "" : `${kind}: `;
+  return `${negated ? "!" : ""}${prefix}${value}`;
 }
 
 function sameTarget(a, b) {
-  return a.isKeyword === b.isKeyword && a.value === b.value;
+  return a.kind === b.kind && a.value === b.value;
 }
 
 function validateValue(value) {
@@ -133,10 +138,12 @@ function list() {
   }
 
   const groups = {
-    filePatterns: parsed.filter((p) => !p.negated && !p.isKeyword),
-    keywords: parsed.filter((p) => !p.negated && p.isKeyword),
-    excludedFilePatterns: parsed.filter((p) => p.negated && !p.isKeyword),
-    excludedKeywords: parsed.filter((p) => p.negated && p.isKeyword),
+    filePatterns: parsed.filter((p) => !p.negated && p.kind === "file"),
+    keywords: parsed.filter((p) => !p.negated && p.kind === "keyword"),
+    redactKeys: parsed.filter((p) => !p.negated && p.kind === "redact-key"),
+    excludedFilePatterns: parsed.filter((p) => p.negated && p.kind === "file"),
+    excludedKeywords: parsed.filter((p) => p.negated && p.kind === "keyword"),
+    excludedRedactKeys: parsed.filter((p) => p.negated && p.kind === "redact-key"),
   };
 
   console.log(`Contenido de ${FILE}:\n`);
@@ -150,9 +157,11 @@ function list() {
     console.log();
   };
   printGroup("Patrones de archivo agregados", groups.filePatterns);
-  printGroup("Palabras clave agregadas", groups.keywords);
+  printGroup("Palabras clave agregadas (busqueda Grep/shell)", groups.keywords);
+  printGroup("Claves de redaccion agregadas (valor oculto al leer)", groups.redactKeys);
   printGroup("Patrones integrados excluidos", groups.excludedFilePatterns);
   printGroup("Palabras clave integradas excluidas", groups.excludedKeywords);
+  printGroup("Claves de redaccion excluidas", groups.excludedRedactKeys);
   console.log(
     "Los patrones integrados de hooks/guard.js siguen aplicando ademas de esto " +
       "(ver README, seccion \"Patrones cubiertos\")."
@@ -163,17 +172,27 @@ function printHelp() {
   console.log(`credential-read-guard: gestion de .credentialguardignore
 
 Uso:
-  ignore add <patron>            agrega un patron regex de archivo
-  ignore add keyword:<palabra>   agrega una palabra clave de busqueda de secretos
-  ignore remove <patron>         quita un patron propio, o lo excluye si es integrado
+  ignore add <patron>              agrega un patron regex de archivo (bloquea el archivo entero)
+  ignore add keyword:<palabra>     agrega una palabra clave de busqueda de secretos (bloquea Grep/shell)
+  ignore add redact-key:<clave>    agrega una clave cuyo VALOR se oculta al leer (no bloquea archivo ni busqueda)
+  ignore remove <patron>           quita un patron propio, o lo excluye si es integrado
   ignore remove keyword:<palabra>
-  ignore list                    muestra el contenido actual, agrupado
+  ignore remove redact-key:<clave>
+  ignore list                      muestra el contenido actual, agrupado
 
 Ejemplos:
   ignore add "mi_configuracion_secreta\\.ini$"
   ignore add keyword:ReymaMessageQueueOptions
+  ignore add redact-key:Authority
   ignore remove "appsettings\\.Test\\.json$"
   ignore list
+
+Un patron de archivo (sin prefijo) excluye/incluye ARCHIVOS enteros -- usalo
+cuando lo que agregas es un nombre o extension ("*.json" en el sentido de
+"\\.json$"), porque ahi si tiene sentido tratar todo el archivo como
+credencial. "redact-key:" es lo opuesto: excluye/incluye solo el VALOR de
+una clave puntual (ej. "Authority" en un JSON) dentro de un archivo que de
+todas formas se sigue mostrando -- para eso, no uses un patron de archivo.
 
 El valor es un patron regex (insensible a mayusculas), no un glob -- por
 eso "*.json" no funciona como se esperaria, hace falta "\\.json$". El
@@ -187,10 +206,10 @@ Ver examples/.credentialguardignore.example para el formato completo.`);
 
 function parseTargetArg(raw) {
   if (!raw) return null;
-  const isKeyword = /^keyword:/i.test(raw);
-  const value = (isKeyword ? raw.replace(/^keyword:/i, "") : raw).trim();
+  const kind = /^redact-key:/i.test(raw) ? "redact-key" : /^keyword:/i.test(raw) ? "keyword" : "file";
+  const value = (kind === "file" ? raw : raw.replace(/^(redact-key|keyword):/i, "")).trim();
   if (!value) return null;
-  return { negated: false, isKeyword, value };
+  return { negated: false, kind, value };
 }
 
 const [cmd, ...rest] = process.argv.slice(2);
@@ -200,7 +219,9 @@ switch (cmd) {
   case "add": {
     const target = parseTargetArg(argValue);
     if (!target) {
-      console.error('Falta el patron. Uso: ignore add <patron>  |  ignore add keyword:<palabra>');
+      console.error(
+        'Falta el patron. Uso: ignore add <patron>  |  ignore add keyword:<palabra>  |  ignore add redact-key:<clave>'
+      );
       process.exit(1);
     }
     add(target);
@@ -209,7 +230,9 @@ switch (cmd) {
   case "remove": {
     const target = parseTargetArg(argValue);
     if (!target) {
-      console.error('Falta el patron. Uso: ignore remove <patron>  |  ignore remove keyword:<palabra>');
+      console.error(
+        'Falta el patron. Uso: ignore remove <patron>  |  ignore remove keyword:<palabra>  |  ignore remove redact-key:<clave>'
+      );
       process.exit(1);
     }
     remove(target);

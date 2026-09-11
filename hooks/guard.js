@@ -56,11 +56,22 @@ const REDACTED = "«REDACTED-BY-credential-read-guard»";
 // igual que un .gitignore: una linea = un patron regex adicional; prefijo
 // "!" excluye ese patron (incluso si viene de la lista integrada); prefijo
 // "keyword:" agrega una palabra clave de busqueda de secretos en vez de un
-// patron de archivo (tambien admite "!keyword:" para excluir). Lineas
-// vacias o que empiezan con "#" se ignoran. Si el archivo no existe o esta
-// mal formado, se usan solo los patrones integrados -- nunca falla el hook.
+// patron de archivo (tambien admite "!keyword:" para excluir); prefijo
+// "redact-key:" agrega una clave cuyo VALOR se redacta dentro de un archivo
+// ya mostrado, sin bloquear ninguna busqueda ni el archivo entero por
+// nombre (tambien admite "!redact-key:" para excluir una clave que las
+// heuristicas integradas redactarian). Lineas vacias o que empiezan con
+// "#" se ignoran. Si el archivo no existe o esta mal formado, se usan solo
+// los patrones integrados -- nunca falla el hook.
 function loadCustomPatterns() {
-  const result = { filePatterns: [], keywordPatterns: [], excludeFilePatterns: [], excludeKeywords: [] };
+  const result = {
+    filePatterns: [],
+    keywordPatterns: [],
+    redactKeyPatterns: [],
+    excludeFilePatterns: [],
+    excludeKeywords: [],
+    excludeRedactKeys: [],
+  };
   const configPath = path.join(process.cwd(), ".credentialguardignore");
 
   let raw;
@@ -76,8 +87,13 @@ function loadCustomPatterns() {
 
     const isNegated = line.startsWith("!");
     const body = isNegated ? line.slice(1).trim() : line;
-    const isKeyword = /^keyword:/i.test(body);
-    const value = isKeyword ? body.replace(/^keyword:/i, "").trim() : body;
+    const isRedactKey = /^redact-key:/i.test(body);
+    const isKeyword = !isRedactKey && /^keyword:/i.test(body);
+    const value = isRedactKey
+      ? body.replace(/^redact-key:/i, "").trim()
+      : isKeyword
+      ? body.replace(/^keyword:/i, "").trim()
+      : body;
     if (!value) continue;
 
     try {
@@ -86,7 +102,9 @@ function loadCustomPatterns() {
       continue;
     }
 
-    if (isKeyword) {
+    if (isRedactKey) {
+      (isNegated ? result.excludeRedactKeys : result.redactKeyPatterns).push(value);
+    } else if (isKeyword) {
       (isNegated ? result.excludeKeywords : result.keywordPatterns).push(value);
     } else {
       (isNegated ? result.excludeFilePatterns : result.filePatterns).push(value);
@@ -111,6 +129,25 @@ const SECRET_HUNT_RE = new RegExp(
 );
 const EXCLUDE_KEYWORD_RE = custom.excludeKeywords.length
   ? new RegExp(custom.excludeKeywords.join("|"), "i")
+  : null;
+// Claves agregadas via "redact-key:" en .credentialguardignore -- a
+// diferencia de "keyword:" (que solo alimenta SECRET_HUNT_RE, o sea la
+// busqueda por Grep/shell), esto conecta directo con isSecretKey()/
+// shouldRedact() dentro de redactFile(): fuerza a redactar el VALOR de esa
+// clave puntual en un archivo que de todas formas se sigue mostrando (no
+// bloquea el archivo entero ni una busqueda), sin pasar por el filtro de
+// entropia/URI de looksLikeSecretValue() -- quien la agrega ya declaro
+// explicitamente que esa clave es secreta, no hace falta que el valor
+// "parezca" serlo.
+const CUSTOM_REDACT_KEY_RE = custom.redactKeyPatterns.length
+  ? new RegExp(custom.redactKeyPatterns.join("|"), "i")
+  : null;
+// "!redact-key:" es el inverso: fuerza a NO redactar una clave puntual
+// aunque GENERIC_SECRET_KEY_RE/secretKeyRe/pascalKeySuffixRe la hubieran
+// marcado -- para el caso donde el proyecto sabe que esa clave no es
+// secreta y las heuristicas integradas la siguen redactando igual.
+const EXCLUDE_REDACT_KEY_RE = custom.excludeRedactKeys.length
+  ? new RegExp(custom.excludeRedactKeys.join("|"), "i")
   : null;
 
 function isSensitiveFile(target) {
@@ -286,7 +323,14 @@ function redactFile(filePath) {
   // Redis/MySQL/RabbitMQ -- una "Uri"/"Endpoint" con ese formato no
   // matchea ni por nombre de clave ni por "password=" literal.
   const embeddedSecretRe = /\b(password|pwd)\s*=|:\/\/[^/\s:]+:[^/\s@]+@/i;
-  const isSecretKey = (key) => secretKeyRe.test(key) || pascalKeySuffixRe.test(key);
+  // CUSTOM_REDACT_KEY_RE ("redact-key:" en .credentialguardignore) se suma
+  // aqui, no a GENERIC_SECRET_KEY_RE -- una clave declarada explicitamente
+  // por el proyecto se redacta siempre, sin pasar por el filtro de
+  // entropia/URI de looksLikeSecretValue() (ver comentario donde se define).
+  const isSecretKey = (key) =>
+    secretKeyRe.test(key) ||
+    pascalKeySuffixRe.test(key) ||
+    (CUSTOM_REDACT_KEY_RE && CUSTOM_REDACT_KEY_RE.test(key));
   // Decision completa por par clave/valor. Dos niveles, no uno:
   //   - clave explicita (isSecretKey): se redacta sin mirar el valor, como
   //     siempre -- "Password: " vacio o "ApiKey: 1234" se redactan igual.
@@ -295,10 +339,18 @@ function redactFile(filePath) {
   //     entropia el filtro, nunca al reves: por eso el gate de la clave puede
   //     ser laxo (un substring "auth" atrapa tambien "Author"/"Authority")
   //     sin que eso se traduzca en redacciones de mas.
-  const shouldRedact = (key, value) =>
-    isSecretKey(key) ||
-    embeddedSecretRe.test(value) ||
-    (GENERIC_SECRET_KEY_RE.test(key) && looksLikeSecretValue(value));
+  // "!redact-key:" (EXCLUDE_REDACT_KEY_RE) se chequea primero y gana sobre
+  // cualquiera de las dos vias -- es una exclusion explicita del proyecto,
+  // igual que EXCLUDE_FILE_RE/EXCLUDE_KEYWORD_RE ganan sobre sus respectivos
+  // patrones integrados.
+  const shouldRedact = (key, value) => {
+    if (EXCLUDE_REDACT_KEY_RE && EXCLUDE_REDACT_KEY_RE.test(key)) return false;
+    return (
+      isSecretKey(key) ||
+      embeddedSecretRe.test(value) ||
+      (GENERIC_SECRET_KEY_RE.test(key) && looksLikeSecretValue(value))
+    );
+  };
 
   let redacted = null;
 

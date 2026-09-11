@@ -134,12 +134,17 @@ const BUILTIN_CASES = [
   },
 ];
 
-function runGuardWithInput(toolName, toolInput) {
+function runGuardWithInput(toolName, toolInput, opts = {}) {
   const input = JSON.stringify({ tool_name: toolName, tool_input: toolInput });
   const result = spawnSync(process.execPath, [GUARD], {
     input,
     encoding: "utf8",
     timeout: 5000,
+    // loadCustomPatterns() en guard.js lee .credentialguardignore de su
+    // propio cwd -- sin esto, los casos de CUSTOM_IGNORE_CASES heredarian
+    // el cwd de quien invoco doctor.js (potencialmente otro proyecto con su
+    // propio .credentialguardignore), no el fixture que se quiere probar.
+    ...(opts.cwd ? { cwd: opts.cwd } : {}),
   });
   const stdout = (result.stdout || "").trim();
   if (!stdout) return { decision: "allow", redacted: null, reason: null };
@@ -168,8 +173,8 @@ function runGuardWithInput(toolName, toolInput) {
 // caso del marcador de redaccion en 1.2.4).
 const ANTI_EVASION_MARKER = "evasion de un control de seguridad";
 
-function runGuard(filePath) {
-  return runGuardWithInput("Read", { file_path: filePath });
+function runGuard(filePath, opts) {
+  return runGuardWithInput("Read", { file_path: filePath }, opts);
 }
 
 // Ademas de "Read" con file_path limpio, el hook tiene que cubrir las formas
@@ -310,6 +315,65 @@ const TOOL_SURFACE_CASES = [
   },
 ];
 
+// Prueba el prefijo "redact-key:" de .credentialguardignore (ver
+// README, seccion "Personalizacion") contra un fixture real, con su propio
+// .credentialguardignore en examples/redact-key-demo/ -- no contra los
+// BUILTIN_CASES de arriba, que corren sin ese archivo. "dir" se pasa como
+// cwd del proceso hijo para que loadCustomPatterns() en guard.js lo lea.
+const CUSTOM_IGNORE_CASES = [
+  {
+    describe: '"redact-key: Authority" oculta solo ese valor, sin bloquear el resto del archivo',
+    dir: path.join(PLUGIN_ROOT, "examples", "redact-key-demo"),
+    file: "appsettings.demo.json",
+    expect: "deny",
+    mustRedact: true,
+    mustNotContain: ["https://identity.innovacion.reyma.com.mx"],
+    mustContain: ["rym.auditoria.api", "este valor debe seguir visible sin cambios"],
+  },
+];
+
+function checkCustomIgnore() {
+  let failures = 0;
+  console.log("Comportamiento de .credentialguardignore (redact-key:):\n");
+  for (const c of CUSTOM_IGNORE_CASES) {
+    const abs = path.join(c.dir, c.file);
+    const { decision, redacted, reason } = runGuard(abs, { cwd: c.dir });
+    const problems = [];
+
+    if (decision !== c.expect) {
+      problems.push(`se esperaba "${c.expect}", se obtuvo "${decision}"`);
+    }
+    if (c.mustRedact && !redacted) {
+      problems.push("se esperaba contenido redactado y no vino ninguno");
+    }
+    if (!c.mustRedact && redacted) {
+      problems.push("no se esperaba contenido redactado, pero vino uno");
+    }
+    if (c.expect === "deny" && !(reason && reason.includes(ANTI_EVASION_MARKER))) {
+      problems.push("el deny no trae la instruccion anti-evasion esperada");
+    }
+    for (const s of c.mustNotContain || []) {
+      if (redacted && redacted.includes(s)) {
+        problems.push(`el valor sensible "${s}" sigue visible sin redactar`);
+      }
+    }
+    for (const s of c.mustContain || []) {
+      if (redacted && !redacted.includes(s)) {
+        problems.push(`se perdio contenido no sensible ("${s}")`);
+      }
+    }
+
+    const ok = problems.length === 0;
+    if (!ok) failures++;
+    console.log(
+      `  ${ok ? "✓" : "✗"} ${c.describe} — ${decision}` +
+        (problems.length ? "\n      " + problems.join("\n      ") : "")
+    );
+  }
+  console.log();
+  return failures;
+}
+
 function checkBuiltin() {
   let failures = 0;
   console.log("Fixtures incluidos (examples/):\n");
@@ -420,13 +484,13 @@ console.log(
 );
 
 if (!arg) {
-  const failures = checkBuiltin() + checkToolSurfaces();
+  const failures = checkBuiltin() + checkToolSurfaces() + checkCustomIgnore();
   if (failures > 0) {
     console.error(`✗ ${failures} caso(s) no se comportaron como se esperaba.`);
     process.exit(1);
   }
-  const total = BUILTIN_CASES.length + TOOL_SURFACE_CASES.length;
-  console.log(`✓ Los ${total} casos (fixtures de examples/ y las mismas rutas vistas por Bash/PowerShell/Grep) se comportan como documenta el README.`);
+  const total = BUILTIN_CASES.length + TOOL_SURFACE_CASES.length + CUSTOM_IGNORE_CASES.length;
+  console.log(`✓ Los ${total} casos (fixtures de examples/, las mismas rutas vistas por Bash/PowerShell/Grep, y .credentialguardignore) se comportan como documenta el README.`);
   console.log("\nPara probar un archivo propio: node scripts/doctor.js <ruta>");
   process.exit(0);
 } else {

@@ -64,6 +64,16 @@ clave, además, cualquier valor con forma `esquema://usuario:contraseña@host`
 MySQL o RabbitMQ) se redacta igual — así una clave genérica como `Uri` o
 `Endpoint` no deja pasar la credencial que contiene.
 
+Además, una clave genérica que contenga `auth`/`credential` (`Authority`,
+`AuthMode`, `ExternalServiceCredential`) se redacta solo si su *valor*
+parece un secreto (hexadecimal largo o alta entropía) — un valor con forma
+de URL, como la `Authority` de un proveedor OIDC, se deja visible a
+propósito para no generar falsos positivos. Si un proyecto puntual sí
+considera secreta una clave así sin importar la forma del valor, se agrega
+con `redact-key:` (ver [Personalización](#personalización)) en vez de
+`keyword:`, que bloquearía búsquedas enteras en lugar de tachar solo ese
+valor.
+
 Ademas, dentro de esos
 mismos archivos, cualquier IP (IPv4) con puerto opcional (`IP:puerto` o,
 formato SQL Server, `IP,puerto`) se redacta sin importar la clave o el
@@ -168,13 +178,29 @@ archivo, y crearlo no es un requisito para que el plugin funcione.
 - Prefijo `keyword:` agrega una palabra clave de búsqueda de secretos
   (para `Grep`/`grep` por shell) en vez de un patrón de archivo;
   `!keyword:` la excluye.
+- Prefijo `redact-key:` agrega una clave cuyo **valor** se redacta dentro
+  de un archivo que igual se sigue mostrando — no bloquea el archivo
+  entero ni ninguna búsqueda; `!redact-key:` excluye una clave que las
+  reglas integradas redactarían igual.
 - Líneas vacías o que empiezan con `#` se ignoran.
+
+La diferencia entre los tres tipos importa y no es intercambiable: un
+patrón de archivo (sin prefijo) o `keyword:` excluyen/incluyen **archivos
+o búsquedas enteras** — tiene sentido cuando lo que se agrega es un
+nombre, una extensión o un patrón de búsqueda, porque ahí sí se entiende
+que se trata "todo" como credencial. `redact-key:` es lo opuesto: solo
+tacha el valor de **una clave puntual** (p. ej. `Authority` en un
+`appsettings.json`) dejando visible el resto del archivo — agregar esa
+misma clave como `keyword:` bloquearía de más (toda búsqueda que la
+mencione), y como patrón de archivo no aplicaría en absoluto (no es un
+nombre de archivo).
 
 No hace falta editar el archivo a mano ni recordar esta sintaxis:
 
 ```
 /credential-read-guard:ignore add "mi_configuracion_secreta\.ini$"
 /credential-read-guard:ignore add keyword:ReymaMessageQueueOptions
+/credential-read-guard:ignore add redact-key:Authority
 /credential-read-guard:ignore remove "appsettings\.Test\.json$"
 /credential-read-guard:ignore list
 ```
@@ -190,6 +216,13 @@ cambia, solo evita tener que ir a buscarlo en la documentación.
 Ver [`examples/.credentialguardignore.example`](examples/.credentialguardignore.example)
 para un ejemplo completo del formato en crudo. Si el archivo no existe, el
 plugin funciona igual, solo con los patrones integrados.
+
+Después de agregar una línea, no asumas que tuvo el efecto esperado —
+confirmalo con `/credential-read-guard:doctor ruta/a/tu/archivo` (ver
+[Verificación](#verificación)), corrido desde la raíz de este mismo
+proyecto: es el mismo `.credentialguardignore` que va a leer
+`hooks/guard.js` en una sesión real, así que si `doctor` no muestra el
+cambio, tampoco lo va a mostrar la sesión.
 
 ## Requisitos
 
@@ -272,6 +305,15 @@ lista `env:` de Kubernetes). `appsettings.demo.json` incluye además un
 quedan redactados dentro de un valor que por nombre de clave no dispara la
 redacción por sí solo.
 
+Además de esos fixtures, `doctor` corre un tercer grupo de casos contra
+`examples/redact-key-demo/` — un fixture con su propio
+`.credentialguardignore` (`redact-key: Authority`) —, para confirmar que
+ese prefijo de personalización (ver [Personalización](#personalización))
+redacta el valor de la clave sin bloquear el resto del archivo, y sin
+romper ninguno de los otros casos. Es la misma mecánica de los otros dos
+grupos, pero ejercitando `.credentialguardignore` en vez de solo los
+patrones integrados de `hooks/guard.js`.
+
 El mismo comando acepta la ruta de un archivo propio del proyecto — útil
 para comprobar, por ejemplo, que un campo nuevo como `ApiKey` que acabas
 de agregar a tu `appsettings.json` real sí queda cubierto:
@@ -279,6 +321,16 @@ de agregar a tu `appsettings.json` real sí queda cubierto:
 ```
 /credential-read-guard:doctor ruta/a/tu/appsettings.json
 ```
+
+Corrido así, desde la raíz de tu proyecto real, `doctor` lee el
+`.credentialguardignore` de ESE proyecto — mismo mecanismo que usa
+`hooks/guard.js` en una sesión real (lee de su propio cwd), no una copia
+aparte. Es la forma directa de confirmar si una línea que acabás de
+agregar (por ejemplo `redact-key: Authority`, o `keyword: algo`) tuvo el
+efecto esperado, en vez de asumirlo o esperar a la siguiente sesión: si
+`keyword:` no cambia nada sobre lo que ves acá, es porque ese prefijo no
+toca la redacción de `Read` (ver [Arquitectura](#arquitectura)) — necesitás
+`redact-key:` para eso.
 
 **Importante:** con o sin argumentos, `doctor` invoca `hooks/guard.js`
 directo por Node (`spawnSync`, alimentado a mano con el mismo payload que
@@ -321,8 +373,8 @@ script de Node corriente que se puede invocar en tu propia terminal, sin
 abrir Claude Code:
 
 ```bash
-node scripts/doctor.js                       # los 10 fixtures de examples/
-node scripts/doctor.js ruta/a/tu/archivo.json # un archivo propio
+node scripts/doctor.js                       # los fixtures de examples/, incluido .credentialguardignore
+node scripts/doctor.js ruta/a/tu/archivo.json # un archivo propio, con el .credentialguardignore de tu cwd
 ```
 
 O, para inspeccionar el JSON crudo que el hook le devolvería a Claude:
@@ -361,8 +413,8 @@ actualización sin que nadie lo vuelva a tocar. Desde cualquier proyecto,
 en cualquier terminal:
 
 ```bash
-credguard                 # los 10 fixtures de examples/
-credguard ruta/archivo    # un archivo propio, sin exponer su contenido
+credguard                 # los fixtures de examples/, incluido .credentialguardignore
+credguard ruta/archivo    # un archivo propio, sin exponer su contenido, con el .credentialguardignore de tu cwd
 credguard ignore ...      # gestiona .credentialguardignore -- "credguard ignore" para su ayuda
 ```
 
