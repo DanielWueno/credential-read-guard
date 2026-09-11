@@ -3,7 +3,7 @@
 Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 Versionado: [SemVer](https://semver.org/lang/es/).
 
-## [Unreleased]
+## [1.4.0] — 2026-09-11
 
 ### Añadido
 
