@@ -11,8 +11,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/ignore.js" $ARGUMENTS
 
 Si `$ARGUMENTS` viene vacío, el script imprime su propia ayuda con ejemplos
 -- no hace falta ir a la documentación para recordar la sintaxis exacta.
-Subcomandos: `add <patrón>`, `add keyword:<palabra>`, `remove <patrón>`,
-`remove keyword:<palabra>`, `list`.
+Subcomandos: `add <patrón>`, `add keyword:<palabra>`,
+`add redact-key:<clave>`, `remove <patrón>`, `remove keyword:<palabra>`,
+`remove redact-key:<clave>`, `list`.
 
 El archivo `.credentialguardignore` que edita este comando es puramente
 aditivo/opcional -- vive en la raíz del proyecto actual y solo agrega o
